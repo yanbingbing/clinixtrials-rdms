@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kydata-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kydata
+      POSTGRES_USER: kydata
+      POSTGRES_PASSWORD: kydata
+    ports:
+      - "5432:5432"
+    volumes:
+      - kydata-postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kydata -d kydata"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  kydata-postgres-data:

@@ -1,0 +1,4 @@
+ALTER TABLE projects
+  ADD COLUMN IF NOT EXISTS department text NOT NULL DEFAULT '血管外科';
+
+ALTER TABLE projects ALTER COLUMN department DROP DEFAULT;

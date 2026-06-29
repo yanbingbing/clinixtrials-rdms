@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto"
 
 import { closePool, pool, query } from "./db"
 
-const app = express()
+export const app = express()
 const port = Number(process.env.API_PORT ?? 4000)
 
 app.use(cors())
@@ -954,15 +954,19 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
   })
 })
 
-const server = app.listen(port, () => {
-  console.log(`API server listening on http://localhost:${port}`)
-})
+if (!process.env.VERCEL) {
+  const server = app.listen(port, () => {
+    console.log(`API server listening on http://localhost:${port}`)
+  })
 
-const shutdown = async () => {
-  server.close()
-  await closePool()
-  process.exit(0)
+  const shutdown = async () => {
+    server.close()
+    await closePool()
+    process.exit(0)
+  }
+
+  process.on("SIGINT", shutdown)
+  process.on("SIGTERM", shutdown)
 }
 
-process.on("SIGINT", shutdown)
-process.on("SIGTERM", shutdown)
+export default app

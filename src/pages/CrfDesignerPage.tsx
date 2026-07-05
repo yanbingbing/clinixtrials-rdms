@@ -1,17 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import {
-  ArrowDown,
-  ArrowUp,
-  CopyPlus,
-  FilePlus2,
-  GripVertical,
-  Plus,
-  Save,
-  Send,
-  Table2,
-  Trash2,
-} from "lucide-react"
+import { Link, useNavigate, useParams } from "@tanstack/react-router"
+import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, Plus, Save, Send, Table2, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -52,17 +42,16 @@ const fieldTypeLabels: Record<CrfFieldType, string> = {
   detail_table: "明细表格",
 }
 
-function createDraftSchema(index: number, category: CrfSchema["category"]): CrfSchema {
-  const isBase = category === "base"
+function createDraftSchema(index: number): CrfSchema {
   return {
     schemaVersion: "1.0",
     id: crypto.randomUUID(),
     projectId: "ON101",
-    code: `${isBase ? "base" : "atom"}_${index}`,
-    name: isBase ? "新基础表格" : "新原子表格",
+    code: `atom_${index}`,
+    name: "新原子表格",
     version: 1,
     status: "draft",
-    category,
+    category: "atomic",
     nodes: [
       {
         kind: "section",
@@ -75,48 +64,38 @@ function createDraftSchema(index: number, category: CrfSchema["category"]): CrfS
 }
 
 export function CrfDesignerPage() {
+  const params = useParams({ from: "/crf/forms/$schemaId" })
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const schemasQuery = useCrfSchemasQuery("ON101")
   const saveSchemaMutation = useSaveCrfSchemaMutation()
   const publishMutation = usePublishCrfSchemaMutation()
-  const [selectedSchemaId, setSelectedSchemaId] = useState("")
-  const [schema, setSchema] = useState<CrfSchema>(() => createDraftSchema(1, "atomic"))
+  const [schema, setSchema] = useState<CrfSchema>(() => createDraftSchema(1))
   const [selectedFieldId, setSelectedFieldId] = useState("")
   const [draggingFieldId, setDraggingFieldId] = useState("")
 
   const schemas = schemasQuery.data ?? []
-  const catalog = useMemo(
-    () => [...schemas, ...(schemas.some((item) => item.id === schema.id) ? [] : [schema])],
-    [schemas, schema],
-  )
   const fields = useMemo(() => flattenCrfFields(schema.nodes), [schema.nodes])
   const selectedField = fields.find((field) => field.id === selectedFieldId) ?? fields[0]
+  const isNew = params.schemaId === "new"
 
   useEffect(() => {
-    if (selectedSchemaId || schemas.length === 0) return
-    setSelectedSchemaId(schemas[0].id)
-  }, [schemas, selectedSchemaId])
+    if (isNew) {
+      const draft = createDraftSchema(schemas.length + 1)
+      setSchema(draft)
+      setSelectedFieldId(flattenCrfFields(draft.nodes)[0]?.id ?? "")
+      return
+    }
 
-  useEffect(() => {
-    const selected = schemas.find((item) => item.id === selectedSchemaId)
+    const selected = schemas.find((item) => item.id === params.schemaId)
     if (!selected) return
     const loaded = structuredClone(selected)
-    setSchema(loaded)
+    setSchema({ ...loaded, category: "atomic" })
     setSelectedFieldId(flattenCrfFields(loaded.nodes)[0]?.id ?? "")
-  }, [schemas, selectedSchemaId])
+  }, [isNew, params.schemaId, schemas])
 
-  const selectOrCreateSchema = (nextSchema: CrfSchema) => {
-    setSelectedSchemaId(nextSchema.id)
-    setSchema(nextSchema)
-    setSelectedFieldId(flattenCrfFields(nextSchema.nodes)[0]?.id ?? "")
-  }
-
-  const addSchema = (category: CrfSchema["category"]) => {
-    selectOrCreateSchema(createDraftSchema(catalog.length + 1, category))
-  }
-
-  const updateSchemaMeta = (patch: Partial<Pick<CrfSchema, "code" | "name" | "version" | "category">>) => {
-    setSchema((current) => ({ ...current, ...patch, status: "draft" }))
+  const updateSchemaMeta = (patch: Partial<Pick<CrfSchema, "code" | "name" | "version">>) => {
+    setSchema((current) => ({ ...current, ...patch, category: "atomic", status: "draft" }))
   }
 
   const updateSelectedField = (patch: Partial<CrfFieldNode>) => {
@@ -148,12 +127,14 @@ export function CrfDesignerPage() {
   }
 
   const saveSchema = async () => {
-    const saved = await saveSchemaMutation.mutateAsync({ ...schema, status: "draft" })
-    setSelectedSchemaId(saved.id)
+    const saved = await saveSchemaMutation.mutateAsync({ ...schema, category: "atomic", status: "draft" })
     setSchema(saved)
     await queryClient.invalidateQueries({ queryKey: ["crf-schemas"] })
     await queryClient.invalidateQueries({ queryKey: ["crf-visit-plan"] })
     await queryClient.invalidateQueries({ queryKey: ["crf-entry-tasks"] })
+    if (isNew) {
+      await navigate({ to: "/crf/forms/$schemaId", params: { schemaId: saved.id } })
+    }
   }
 
   const publishSchema = async () => {
@@ -165,63 +146,38 @@ export function CrfDesignerPage() {
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-124px)] gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-      <aside className="space-y-4 xl:sticky xl:top-[108px] xl:h-[calc(100vh-124px)] xl:overflow-y-auto xl:pr-1">
-        <Card>
-          <CardHeader className="gap-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>表格库</CardTitle>
-                <div className="mt-2 text-sm text-slate-500">基础表格 / 原子表格</div>
-              </div>
-              <Table2 className="h-5 w-5 text-primary" />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button size="sm" variant="outline" className="rounded-full" onClick={() => addSchema("base")}>
-                <FilePlus2 className="mr-2 h-4 w-4" />
-                基础表格
-              </Button>
-              <Button size="sm" className="rounded-full" onClick={() => addSchema("atomic")}>
-                <CopyPlus className="mr-2 h-4 w-4" />
-                原子表格
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {catalog.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => selectOrCreateSchema(structuredClone(item))}
-                className={cn(
-                  "flex w-full items-center justify-between gap-3 rounded-md border bg-white px-3 py-3 text-left text-sm transition-colors",
-                  schema.id === item.id && "border-primary bg-primary/8",
-                )}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate font-semibold text-slate-700">{item.name}</span>
-                  <span className="text-xs text-slate-400">{item.code} · v{item.version}</span>
-                </span>
-                <span className="flex shrink-0 flex-col items-end gap-1">
-                  <Badge className={item.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}>
-                    {item.status === "published" ? "发布" : "草稿"}
-                  </Badge>
-                  <span className="text-xs text-slate-400">{item.category === "base" ? "基础" : "原子"}</span>
-                </span>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
-
-      </aside>
-
+    <div className="grid min-h-[calc(100vh-124px)] gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <main className="min-w-0">
         <Card className="min-h-full">
           <CardHeader className="border-b bg-white/80">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle>表格设计画布</CardTitle>
-                <div className="mt-2 text-sm text-slate-500">当前表格：{schema.name}</div>
+              <div className="min-w-0 flex-1">
+                <div className="mb-3">
+                  <Button asChild variant="ghost" size="sm" className="rounded-full px-2 text-slate-500">
+                    <Link to="/crf/forms">
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      返回表格库
+                    </Link>
+                  </Button>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_220px_120px]">
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium text-slate-600">表格名称</span>
+                    <Input
+                      className="h-11 text-lg font-semibold"
+                      value={schema.name}
+                      onChange={(event) => updateSchemaMeta({ name: event.target.value })}
+                    />
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium text-slate-600">表格编码</span>
+                    <Input value={schema.code} onChange={(event) => updateSchemaMeta({ code: normalizeKey(event.target.value) })} />
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium text-slate-600">版本</span>
+                    <Input type="number" min={1} value={schema.version} onChange={(event) => updateSchemaMeta({ version: Number(event.target.value) || 1 })} />
+                  </label>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Badge className={schema.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}>
@@ -229,9 +185,9 @@ export function CrfDesignerPage() {
                 </Badge>
                 <Button variant="outline" className="rounded-full" onClick={saveSchema} disabled={saveSchemaMutation.isPending}>
                   <Save className="mr-2 h-4 w-4" />
-                  保存表格
+                  保存
                 </Button>
-                <Button className="rounded-full" onClick={publishSchema} disabled={publishMutation.isPending || schema.status === "published"}>
+                <Button className="rounded-full" onClick={publishSchema} disabled={publishMutation.isPending || isNew || schema.status === "published"}>
                   <Send className="mr-2 h-4 w-4" />
                   发布
                 </Button>
@@ -239,35 +195,10 @@ export function CrfDesignerPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5 pt-5">
-            <div className="grid gap-3 md:grid-cols-[1fr_1fr_120px_120px]">
-              <label className="space-y-2 text-sm">
-                <span className="font-medium text-slate-600">表格名称</span>
-                <Input value={schema.name} onChange={(event) => updateSchemaMeta({ name: event.target.value })} />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-medium text-slate-600">表格编码</span>
-                <Input value={schema.code} onChange={(event) => updateSchemaMeta({ code: normalizeKey(event.target.value) })} />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-medium text-slate-600">版本</span>
-                <Input type="number" min={1} value={schema.version} onChange={(event) => updateSchemaMeta({ version: Number(event.target.value) || 1 })} />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span className="font-medium text-slate-600">分类</span>
-                <Select value={schema.category ?? "atomic"} onValueChange={(value) => updateSchemaMeta({ category: value as CrfSchema["category"] })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="base">基础</SelectItem>
-                    <SelectItem value="atomic">原子</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-            </div>
-
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-700">字段结构</div>
-                <div className="mt-1 text-xs text-slate-400">点击字段后在右侧配置面板编辑属性</div>
+                <CardTitle>字段结构</CardTitle>
+                <div className="mt-2 text-sm text-slate-500">点击字段后在右侧配置面板编辑属性</div>
               </div>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" className="rounded-full" onClick={() => addField("detail_table")}>
@@ -345,7 +276,7 @@ export function CrfDesignerPage() {
           </CardHeader>
           <CardContent className="h-[calc(100%-86px)] overflow-y-auto pt-5">
             {selectedField ? (
-              <FieldEditor field={selectedField} schemas={catalog} currentSchemaId={schema.id} onChange={updateSelectedField} />
+              <FieldEditor field={selectedField} schemas={schemas} currentSchemaId={schema.id} onChange={updateSelectedField} />
             ) : (
               <div className="rounded-md border border-dashed p-8 text-center text-sm text-slate-500">请选择字段</div>
             )}
@@ -446,7 +377,7 @@ function FieldEditor({
             </label>
           </div>
           <div className="mt-3 text-xs leading-5 text-slate-500">
-            明细字段不是 Lookup；它表示一组可重复子记录，后续会用独立明细记录表保存。
+            明细字段表示一组可重复子记录，不是 Lookup。
           </div>
         </div>
       ) : null}

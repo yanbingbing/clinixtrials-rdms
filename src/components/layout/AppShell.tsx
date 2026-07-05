@@ -33,7 +33,7 @@ const managerNavItems = [
   { label: "患者管理", to: "/patients", icon: UsersRound },
   { label: "数据管理", to: "/data", icon: BarChart3 },
   { label: "范式计划", to: "/crf/designer", icon: FileCog },
-  { label: "表格设计", to: "/crf/forms", icon: FileText },
+  { label: "原子表格库", to: "/crf/forms", icon: FileText },
   { label: "CRF填报", to: "/crf/entry", icon: FilePenLine },
   { label: "统计分析", to: "/statistics", icon: Database },
   { label: "账户管理", to: "/accounts", icon: FileText },

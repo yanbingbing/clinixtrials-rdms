@@ -230,7 +230,7 @@ export function CrfPlanPage() {
       <aside className="space-y-4 xl:sticky xl:top-[108px] xl:h-[calc(100vh-124px)] xl:overflow-y-auto">
         <Card>
           <CardHeader className="border-b bg-white/80">
-            <CardTitle>表格库</CardTitle>
+            <CardTitle>原子表格库</CardTitle>
             <div className="text-sm text-slate-500">计划只引用表格，不在这里设计字段</div>
           </CardHeader>
           <CardContent className="space-y-2 pt-5">
@@ -243,9 +243,7 @@ export function CrfPlanPage() {
                       {schema.code} · v{schema.version}
                     </div>
                   </div>
-                  <Badge className="bg-slate-100 text-slate-600">
-                    {schema.category === "base" ? "基础" : "原子"}
-                  </Badge>
+                  <Badge className="bg-slate-100 text-slate-600">原子</Badge>
                 </div>
               </div>
             ))}
@@ -258,12 +256,12 @@ export function CrfPlanPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="text-sm leading-6 text-slate-500">
-              如果计划配置时发现表格库里没有需要的表格，进入表格设计页面新增或修改。
+              如果计划配置时发现表格库里没有需要的表格，进入原子表格库新增或修改。
             </div>
             <Button asChild className="w-full rounded-full">
               <Link to="/crf/forms">
                 <FilePlus2 className="mr-2 h-4 w-4" />
-                去表格设计
+                去原子表格库
               </Link>
             </Button>
           </CardContent>

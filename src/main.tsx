@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { AppShell } from "@/components/layout/AppShell"
 import { CrfDesignerPage } from "@/pages/CrfDesignerPage"
 import { CrfEntryPage } from "@/pages/CrfEntryPage"
+import { CrfFormsLibraryPage } from "@/pages/CrfFormsLibraryPage"
 import { CrfPlanPage } from "@/pages/CrfPlanPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { DataDetailPage } from "@/pages/DataDetailPage"
@@ -76,6 +77,12 @@ const crfDesignerRoute = createRoute({
 const crfFormsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/crf/forms",
+  component: CrfFormsLibraryPage,
+})
+
+const crfFormDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crf/forms/$schemaId",
   component: CrfDesignerPage,
 })
 
@@ -124,6 +131,7 @@ const routeTree = rootRoute.addChildren([
   dataRoute,
   crfDesignerRoute,
   crfFormsRoute,
+  crfFormDetailRoute,
   crfEntryRoute,
   statisticsRoute,
   accountsRoute,

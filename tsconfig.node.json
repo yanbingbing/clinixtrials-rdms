@@ -12,5 +12,5 @@
     "noEmit": true,
     "strict": true
   },
-  "include": ["vite.config.ts", "drizzle.config.ts", "server/src/**/*.ts", "api/**/*.ts"]
+  "include": ["vite.config.ts", "drizzle.config.ts", "server/src/**/*.ts", "api/**/*.ts", "shared/**/*.ts"]
 }

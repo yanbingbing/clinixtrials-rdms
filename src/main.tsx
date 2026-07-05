@@ -50,6 +50,12 @@ const projectOverviewRoute = createRoute({
   component: ProjectOverviewPage,
 })
 
+const projectCrfRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/crf",
+  component: CrfPlanPage,
+})
+
 const progressRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/progress",
@@ -126,6 +132,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   projectsRoute,
   projectOverviewRoute,
+  projectCrfRoute,
   progressRoute,
   patientsRoute,
   dataRoute,

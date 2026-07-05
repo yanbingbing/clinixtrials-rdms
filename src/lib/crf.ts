@@ -126,6 +126,7 @@ export interface CrfVisitForm {
   version: number
   required: boolean
   sortOrder: number
+  sortKey: string
   schema: CrfSchema
 }
 
@@ -133,6 +134,7 @@ export interface CrfVisitPlanItem {
   visitCode: string
   title: string
   sortOrder: number
+  sortKey: string
   forms: CrfVisitForm[]
 }
 
@@ -142,7 +144,9 @@ export interface CrfVisitPlanPayload {
     visitCode: string
     title: string
     sortOrder: number
-    formSchemaIds: string[]
+    sortKey: string
+    forms?: Array<{ schemaId: string; sortKey: string }>
+    formSchemaIds?: string[]
   }>
 }
 

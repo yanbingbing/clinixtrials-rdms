@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS crf_project_visits (
   project_id text NOT NULL REFERENCES projects(code) ON DELETE CASCADE,
   visit_code text NOT NULL REFERENCES visits(code),
   title text NOT NULL,
+  sort_key text NOT NULL,
   sort_order integer NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS crf_visit_forms (
   project_id text NOT NULL,
   visit_code text NOT NULL,
   schema_id uuid NOT NULL REFERENCES crf_schemas(id) ON DELETE RESTRICT,
+  sort_key text NOT NULL,
   sort_order integer NOT NULL,
   required boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -25,6 +27,12 @@ CREATE TABLE IF NOT EXISTS crf_visit_forms (
 
 CREATE INDEX IF NOT EXISTS crf_visit_forms_schema_idx
   ON crf_visit_forms (schema_id);
+
+CREATE INDEX IF NOT EXISTS crf_project_visits_project_sort_key_idx
+  ON crf_project_visits (project_id, sort_key);
+
+CREATE INDEX IF NOT EXISTS crf_visit_forms_visit_sort_key_idx
+  ON crf_visit_forms (project_id, visit_code, sort_key);
 
 WITH visit_schema AS (
   INSERT INTO crf_schemas (project_id, code, name, version, status, schema, published_at)
@@ -109,32 +117,34 @@ baseline_schema AS (
   WHERE project_id = 'ON101' AND code = 'baseline' AND version = 1
 ),
 upsert_visits AS (
-  INSERT INTO crf_project_visits (project_id, visit_code, title, sort_order)
+  INSERT INTO crf_project_visits (project_id, visit_code, title, sort_key, sort_order)
   VALUES
-    ('ON101', 'V0', '筛选访视', 0),
-    ('ON101', 'V1', '基线访视', 1),
-    ('ON101', 'V2', '第 2 次访视', 2)
+    ('ON101', 'V0', '筛选访视', 'U000000', 0),
+    ('ON101', 'V1', '基线访视', 'U000001', 1),
+    ('ON101', 'V2', '第 2 次访视', 'U000002', 2)
   ON CONFLICT (project_id, visit_code) DO UPDATE SET
     title = EXCLUDED.title,
+    sort_key = EXCLUDED.sort_key,
     sort_order = EXCLUDED.sort_order,
     updated_at = now()
   RETURNING project_id, visit_code
 ),
 mapped AS (
-  INSERT INTO crf_visit_forms (project_id, visit_code, schema_id, sort_order, required)
-  SELECT 'ON101', visit_code, schema_id, sort_order, true
+  INSERT INTO crf_visit_forms (project_id, visit_code, schema_id, sort_key, sort_order, required)
+  SELECT 'ON101', visit_code, schema_id, sort_key, sort_order, true
   FROM (
-    SELECT 'V0' AS visit_code, visit_schema.id AS schema_id, 1 AS sort_order FROM visit_schema
+    SELECT 'V0' AS visit_code, visit_schema.id AS schema_id, 'U000001' AS sort_key, 1 AS sort_order FROM visit_schema
     UNION ALL
-    SELECT 'V0', baseline_schema.id, 2 FROM baseline_schema
+    SELECT 'V0', baseline_schema.id, 'U000002', 2 FROM baseline_schema
     UNION ALL
-    SELECT 'V1', visit_schema.id, 1 FROM visit_schema
+    SELECT 'V1', visit_schema.id, 'U000001', 1 FROM visit_schema
     UNION ALL
-    SELECT 'V1', baseline_schema.id, 2 FROM baseline_schema
+    SELECT 'V1', baseline_schema.id, 'U000002', 2 FROM baseline_schema
     UNION ALL
-    SELECT 'V2', visit_schema.id, 1 FROM visit_schema
+    SELECT 'V2', visit_schema.id, 'U000001', 1 FROM visit_schema
   ) seed
   ON CONFLICT (project_id, visit_code, schema_id) DO UPDATE SET
+    sort_key = EXCLUDED.sort_key,
     sort_order = EXCLUDED.sort_order,
     required = EXCLUDED.required,
     updated_at = now()

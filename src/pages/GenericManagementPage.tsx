@@ -2,13 +2,10 @@ import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from "
 import { Link } from "@tanstack/react-router"
 import type React from "react"
 import {
-  ClipboardList,
-  Database,
   FileText,
   Plus,
   Search,
   Settings2,
-  UsersRound,
   type LucideIcon,
 } from "lucide-react"
 
@@ -123,10 +120,7 @@ function ProjectListCard({
 
       <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-slate-500">
         <ProjectAction icon={FileText} label="项目概况" to="/projects/$projectId" params={{ projectId: project.id }} active />
-        <ProjectAction icon={Settings2} label="CRF配置" to="/projects/$projectId" params={{ projectId: project.id }} />
-        <ProjectAction icon={UsersRound} label="患者管理" to="/patients" />
-        <ProjectAction icon={ClipboardList} label="数据管理" to="/data" />
-        <ProjectAction icon={Database} label="统计分析" to="/statistics" />
+        <ProjectAction icon={Settings2} label="CRF配置" to="/projects/$projectId/crf" params={{ projectId: project.id }} />
       </div>
     </div>
   )

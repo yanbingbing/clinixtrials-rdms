@@ -165,6 +165,7 @@ export const crfProjectVisits = pgTable(
       .notNull()
       .references(() => visits.code),
     title: text("title").notNull(),
+    sortKey: text("sort_key").notNull(),
     sortOrder: integer("sort_order").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -183,6 +184,7 @@ export const crfVisitForms = pgTable(
     schemaId: uuid("schema_id")
       .notNull()
       .references(() => crfSchemas.id, { onDelete: "restrict" }),
+    sortKey: text("sort_key").notNull(),
     sortOrder: integer("sort_order").notNull(),
     required: boolean("required").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

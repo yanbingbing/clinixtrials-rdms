@@ -2,58 +2,26 @@ import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import {
-  BarChart3,
-  Bot,
-  Box,
-  BookOpen,
-  ClipboardList,
-  Database,
-  FileCog,
-  FilePenLine,
   FileText,
+  FolderKanban,
   Home,
-  Hourglass,
-  Mail,
   Plus,
-  Settings,
-  UserRound,
-  UsersRound,
-  type LucideIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { CreateProjectDialog } from "@/components/layout/CreateProjectDialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
-const managerNavItems = [
+const navItems = [
   { label: "首页", to: "/", icon: Home },
-  { label: "项目管理", to: "/projects", icon: Box },
-  { label: "进度管理", to: "/progress", icon: Hourglass },
-  { label: "患者管理", to: "/patients", icon: UsersRound },
-  { label: "数据管理", to: "/data", icon: BarChart3 },
-  { label: "范式计划", to: "/crf/designer", icon: FileCog },
+  { label: "项目管理", to: "/projects", icon: FolderKanban },
   { label: "原子表格库", to: "/crf/forms", icon: FileText },
-  { label: "CRF填报", to: "/crf/entry", icon: FilePenLine },
-  { label: "统计分析", to: "/statistics", icon: Database },
-  { label: "账户管理", to: "/accounts", icon: FileText },
-  { label: "受试者登记", to: "/registration", icon: UserRound },
-  { label: "数据录入", to: "/entry", icon: ClipboardList },
-] as const
-
-const entryNavItems = [
-  { label: "首页", to: "/", icon: Home },
-  { label: "受试者登记", to: "/registration", icon: Box },
-  { label: "数据录入", to: "/entry", icon: Hourglass },
-  { label: "CRF填报", to: "/crf/entry", icon: ClipboardList },
 ] as const
 
 export function AppShell() {
   const queryClient = useQueryClient()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
-  const isEntryRole = pathname.startsWith("/entry") || pathname.startsWith("/registration")
-  const navItems = isEntryRole ? entryNavItems : managerNavItems
 
   return (
     <div className="min-h-screen bg-[#f4f8f7] text-slate-700">
@@ -74,36 +42,13 @@ export function AppShell() {
           </div>
 
           <div className="flex shrink-0 items-center gap-3">
-            {isEntryRole ? (
-              <div className="hidden w-52 xl:block">
-                <Select defaultValue="ON101CLCT06">
-                  <SelectTrigger className="h-10 rounded-full border-white/40 bg-white/15 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ON101CLCT06">ON101CLCT06</SelectItem>
-                    <SelectItem value="ON102CLCT01">ON102CLCT01</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <>
-                <Button
-                  className="hidden rounded-full bg-white px-5 text-primary hover:bg-white/90 xl:inline-flex"
-                  onClick={() => setCreateProjectOpen(true)}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  创建项目
-                </Button>
-                <Button className="hidden rounded-full bg-white px-5 text-primary hover:bg-white/90 xl:inline-flex">
-                  <Mail className="mr-2 h-4 w-4" />
-                  公告通知
-                </Button>
-              </>
-            )}
-            {isEntryRole ? <TopIcon icon={BookOpen} label="研究手册" /> : null}
-            <TopIcon icon={Bot} label="智能助手" />
-            <TopIcon icon={Settings} label="系统设置" />
+            <Button
+              className="hidden rounded-full bg-white px-5 text-primary hover:bg-white/90 xl:inline-flex"
+              onClick={() => setCreateProjectOpen(true)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              创建项目
+            </Button>
             <div className="hidden h-8 w-px bg-white/55 md:block" />
             <div className="hidden items-center gap-3 md:flex">
               <div className="h-10 w-10 overflow-hidden rounded-full border-2 border-white/70 bg-slate-200">
@@ -161,19 +106,5 @@ export function AppShell() {
         }}
       />
     </div>
-  )
-}
-
-function TopIcon({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
-  return (
-    <Button
-      type="button"
-      size="icon"
-      variant="ghost"
-      className="rounded-full bg-white/95 text-primary hover:bg-white"
-      title={label}
-    >
-      <Icon className="h-5 w-5" />
-    </Button>
   )
 }

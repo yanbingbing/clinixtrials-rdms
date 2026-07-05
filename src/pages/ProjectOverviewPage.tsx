@@ -1,11 +1,8 @@
 import { Link, useParams } from "@tanstack/react-router"
 import type React from "react"
 import {
-  ClipboardList,
-  Database,
   FileText,
   Settings2,
-  UsersRound,
 } from "lucide-react"
 import {
   Bar as RechartsBar,
@@ -24,14 +21,6 @@ import { Progress } from "@/components/ui/progress"
 import { projectProgress } from "@/data/mock"
 import { useProjectsQuery, useSubjectsQuery } from "@/hooks/useApiData"
 import type { ProjectProgressRow } from "@/lib/api"
-
-const tabs = [
-  { label: "项目概况", icon: FileText, active: true },
-  { label: "CRF配置", icon: Settings2 },
-  { label: "患者管理", icon: UsersRound },
-  { label: "数据管理", icon: ClipboardList },
-  { label: "统计分析", icon: Database },
-]
 
 export function ProjectOverviewPage() {
   const { projectId } = useParams({ from: "/projects/$projectId" })
@@ -95,15 +84,18 @@ export function ProjectOverviewPage() {
           </div>
 
           <div className="mt-5 flex flex-wrap items-center gap-x-7 gap-y-3 text-sm text-slate-500">
-            {tabs.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <div key={tab.label} className={tab.active ? "flex items-center gap-2 font-semibold text-primary" : "flex items-center gap-2"}>
-                  <Icon className="h-4 w-4" />
-                  <span>{tab.label}</span>
-                </div>
-              )
-            })}
+            <div className="flex items-center gap-2 font-semibold text-primary">
+              <FileText className="h-4 w-4" />
+              <span>项目概况</span>
+            </div>
+            <Link
+              to="/projects/$projectId/crf"
+              params={{ projectId }}
+              className="flex items-center gap-2 hover:text-primary"
+            >
+              <Settings2 className="h-4 w-4" />
+              <span>CRF配置</span>
+            </Link>
           </div>
         </CardContent>
       </Card>

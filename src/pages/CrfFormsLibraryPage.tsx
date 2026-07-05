@@ -18,7 +18,7 @@ export function CrfFormsLibraryPage() {
           <div>
             <CardTitle>原子表格库</CardTitle>
             <div className="mt-2 text-sm text-slate-500">
-              统一维护可复用的原子表格，CRF 范式计划只引用这里的表格
+              统一维护可复用的原子表格，CRF 访视计划只引用这里的表格
             </div>
           </div>
           <Button asChild className="rounded-full">

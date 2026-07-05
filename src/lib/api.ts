@@ -100,6 +100,19 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function deleteJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "DELETE",
+  })
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null)
+    throw new Error(errorBody?.message ?? `Request failed: ${response.status} ${response.statusText}`)
+  }
+  return response.json() as Promise<T>
+}
+
+const encodePath = (value: string) => encodeURIComponent(value)
+
 export const api = {
   health: () => getJson<{ ok: boolean }>("/health"),
   projects: () => getJson<ProjectProgressRow[]>("/projects"),
@@ -116,6 +129,38 @@ export const api = {
   publishCrfSchema: (schemaId: string) => postJson<CrfSchema>(`/crf-schemas/${schemaId}/publish`, {}),
   crfVisitPlan: (projectId = "ON101") => getJson<CrfVisitPlanItem[]>(`/crf-visit-plan?projectId=${projectId}`),
   saveCrfVisitPlan: (payload: CrfVisitPlanPayload) => postJson<{ ok: boolean }>("/crf-visit-plan", payload),
+  createCrfVisit: (projectId: string, body: { visitCode: string; title: string; sortKey: string }) =>
+    postJson<{ ok: boolean }>(`/projects/${encodePath(projectId)}/crf-visits`, body),
+  updateCrfVisit: (
+    projectId: string,
+    visitCode: string,
+    body: Partial<{ title: string; sortKey: string }>,
+  ) => patchJson<{ ok: boolean }>(`/projects/${encodePath(projectId)}/crf-visits/${encodePath(visitCode)}`, body),
+  deleteCrfVisit: (projectId: string, visitCode: string) =>
+    deleteJson<{ ok: boolean }>(`/projects/${encodePath(projectId)}/crf-visits/${encodePath(visitCode)}`),
+  addCrfVisitForm: (
+    projectId: string,
+    visitCode: string,
+    body: { schemaId: string; sortKey: string; required?: boolean },
+  ) =>
+    postJson<{ ok: boolean }>(
+      `/projects/${encodePath(projectId)}/crf-visits/${encodePath(visitCode)}/forms`,
+      body,
+    ),
+  updateCrfVisitForm: (
+    projectId: string,
+    visitCode: string,
+    schemaId: string,
+    body: Partial<{ sortKey: string; required: boolean }>,
+  ) =>
+    patchJson<{ ok: boolean }>(
+      `/projects/${encodePath(projectId)}/crf-visits/${encodePath(visitCode)}/forms/${encodePath(schemaId)}`,
+      body,
+    ),
+  deleteCrfVisitForm: (projectId: string, visitCode: string, schemaId: string) =>
+    deleteJson<{ ok: boolean }>(
+      `/projects/${encodePath(projectId)}/crf-visits/${encodePath(visitCode)}/forms/${encodePath(schemaId)}`,
+    ),
   crfEntryTasks: (projectId = "ON101") => getJson<CrfEntryTask[]>(`/crf-entry-tasks?projectId=${projectId}`),
   crfRecords: (projectId = "ON101", schemaId?: string) =>
     getJson<CrfRecord[]>(

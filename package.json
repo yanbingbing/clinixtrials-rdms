@@ -14,10 +14,13 @@
     "preview": "vite preview --host 0.0.0.0",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx scripts/db-seed.ts",
+    "db:init": "npm run db:migrate && npm run db:seed",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.2",
+    "@radix-ui/react-popover": "^1.1.18",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
     "@tanstack/react-query": "^5.80.7",

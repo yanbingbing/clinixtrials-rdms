@@ -4,10 +4,28 @@ import cors from "cors"
 import express from "express"
 import { randomUUID } from "node:crypto"
 
+import { createInitialSortKey } from "../../shared/sort-key"
 import { closePool, pool, query } from "./db"
 
 export const app = express()
 const port = Number(process.env.API_PORT ?? 4000)
+
+type Queryable = {
+  query: <T = unknown>(sql: string, values?: unknown[]) => Promise<{ rows: T[] }>
+}
+
+async function nextSortOrder(
+  runner: Queryable,
+  table: "visits" | "crf_project_visits" | "crf_visit_forms",
+  whereSql = "",
+  values: unknown[] = [],
+) {
+  const result = await runner.query<{ max: number | null }>(
+    `SELECT max(sort_order) AS max FROM ${table} ${whereSql}`,
+    values,
+  )
+  return (result.rows[0]?.max ?? -1) + 1
+}
 
 app.use(cors())
 app.use(express.json())
@@ -499,6 +517,8 @@ app.get("/api/crf-visit-plan", async (req, res, next) => {
       version: number | null
       required: boolean | null
       formSortOrder: number | null
+      visitSortKey: string
+      formSortKey: string | null
       status: string | null
       schema: CrfSchemaBody | null
       createdAt: string | null
@@ -509,12 +529,14 @@ app.get("/api/crf-visit-plan", async (req, res, next) => {
           cpv.visit_code AS "visitCode",
           cpv.title,
           cpv.sort_order AS "visitSortOrder",
+          cpv.sort_key AS "visitSortKey",
           cs.id::text AS "schemaId",
           cs.code,
           cs.name,
           cs.version,
           cvf.required,
           cvf.sort_order AS "formSortOrder",
+          cvf.sort_key AS "formSortKey",
           cs.status,
           cs.schema,
           cs.created_at AS "createdAt",
@@ -525,7 +547,7 @@ app.get("/api/crf-visit-plan", async (req, res, next) => {
          AND cvf.visit_code = cpv.visit_code
         LEFT JOIN crf_schemas cs ON cs.id = cvf.schema_id
         WHERE cpv.project_id = $1
-        ORDER BY cpv.sort_order, cvf.sort_order NULLS LAST
+        ORDER BY cpv.sort_key, cvf.sort_key NULLS LAST
       `,
       [projectId],
     )
@@ -536,6 +558,7 @@ app.get("/api/crf-visit-plan", async (req, res, next) => {
         visitCode: string
         title: string
         sortOrder: number
+        sortKey: string
         forms: Array<{
           schemaId: string
           code: string
@@ -543,6 +566,7 @@ app.get("/api/crf-visit-plan", async (req, res, next) => {
           version: number
           required: boolean
           sortOrder: number
+          sortKey: string
           schema: unknown
         }>
       }
@@ -553,6 +577,7 @@ app.get("/api/crf-visit-plan", async (req, res, next) => {
         visitCode: row.visitCode,
         title: row.title,
         sortOrder: row.visitSortOrder,
+        sortKey: row.visitSortKey,
         forms: [],
       }
       if (row.schemaId && row.schema && row.code && row.name && row.version !== null) {
@@ -563,6 +588,7 @@ app.get("/api/crf-visit-plan", async (req, res, next) => {
           version: row.version,
           required: row.required ?? true,
           sortOrder: row.formSortOrder ?? visit.forms.length + 1,
+          sortKey: row.formSortKey ?? createInitialSortKey(visit.forms.length),
           schema: hydrateCrfSchema({
             id: row.schemaId,
             projectId,
@@ -594,6 +620,8 @@ app.post("/api/crf-visit-plan", async (req, res, next) => {
         visitCode?: string
         title?: string
         sortOrder?: number
+        sortKey?: string
+        forms?: Array<{ schemaId?: string; sortKey?: string }>
         formSchemaIds?: string[]
       }>
     }
@@ -606,29 +634,88 @@ app.post("/api/crf-visit-plan", async (req, res, next) => {
     }
 
     await client.query("BEGIN")
-    await client.query("DELETE FROM crf_project_visits WHERE project_id = $1", [projectId])
+    const desiredVisitCodes = visits.map((visit) => visit.visitCode?.trim()).filter(Boolean) as string[]
+    const maxVisitSortOrderResult = await client.query<{ max: number | null }>(
+      "SELECT max(sort_order) AS max FROM visits",
+    )
+    const maxProjectVisitSortOrderResult = await client.query<{ max: number | null }>(
+      "SELECT max(sort_order) AS max FROM crf_project_visits WHERE project_id = $1",
+      [projectId],
+    )
+    let nextVisitDictionarySortOrder = (maxVisitSortOrderResult.rows[0]?.max ?? -1) + 1
+    let nextProjectVisitSortOrder = (maxProjectVisitSortOrderResult.rows[0]?.max ?? -1) + 1
+
+    await client.query(
+      "DELETE FROM crf_project_visits WHERE project_id = $1 AND NOT (visit_code = ANY($2::text[]))",
+      [projectId, desiredVisitCodes],
+    )
 
     for (const [visitIndex, visit] of visits.entries()) {
       const visitCode = visit.visitCode?.trim()
       const title = visit.title?.trim()
       if (!visitCode || !title) continue
+      const visitSortKey = visit.sortKey?.trim() || createInitialSortKey(visitIndex)
 
       await client.query(
         `
-          INSERT INTO crf_project_visits (project_id, visit_code, title, sort_order)
-          VALUES ($1, $2, $3, $4)
+          INSERT INTO visits (code, title, sort_order)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (code) DO UPDATE SET title = EXCLUDED.title
         `,
-        [projectId, visitCode, title, visit.sortOrder ?? visitIndex],
+        [visitCode, title, nextVisitDictionarySortOrder],
+      )
+      nextVisitDictionarySortOrder += 1
+
+      await client.query(
+        `
+          INSERT INTO crf_project_visits (project_id, visit_code, title, sort_key, sort_order)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (project_id, visit_code) DO UPDATE SET
+            title = EXCLUDED.title,
+            sort_key = EXCLUDED.sort_key,
+            updated_at = now()
+          WHERE crf_project_visits.title IS DISTINCT FROM EXCLUDED.title
+             OR crf_project_visits.sort_key IS DISTINCT FROM EXCLUDED.sort_key
+        `,
+        [projectId, visitCode, title, visitSortKey, nextProjectVisitSortOrder],
+      )
+      nextProjectVisitSortOrder += 1
+
+      const forms = Array.isArray(visit.forms)
+        ? visit.forms
+            .map((form) => ({ schemaId: form.schemaId?.trim(), sortKey: form.sortKey?.trim() }))
+            .filter((form): form is { schemaId: string; sortKey: string | undefined } => Boolean(form.schemaId))
+        : (visit.formSchemaIds ?? []).map((schemaId, formIndex) => ({
+            schemaId,
+            sortKey: createInitialSortKey(formIndex),
+          }))
+      const desiredSchemaIds = forms.map((form) => form.schemaId)
+      await client.query(
+        "DELETE FROM crf_visit_forms WHERE project_id = $1 AND visit_code = $2 AND NOT (schema_id = ANY($3::uuid[]))",
+        [projectId, visitCode, desiredSchemaIds],
       )
 
-      for (const [formIndex, schemaId] of (visit.formSchemaIds ?? []).entries()) {
+      const maxFormSortOrderResult = await client.query<{ max: number | null }>(
+        "SELECT max(sort_order) AS max FROM crf_visit_forms WHERE project_id = $1 AND visit_code = $2",
+        [projectId, visitCode],
+      )
+      let nextFormSortOrder = (maxFormSortOrderResult.rows[0]?.max ?? 0) + 1
+
+      for (const [formIndex, form] of forms.entries()) {
         await client.query(
           `
-            INSERT INTO crf_visit_forms (project_id, visit_code, schema_id, sort_order, required)
-            VALUES ($1, $2, $3::uuid, $4, true)
+            INSERT INTO crf_visit_forms (project_id, visit_code, schema_id, sort_key, sort_order, required)
+            VALUES ($1, $2, $3::uuid, $4, $5, true)
+            ON CONFLICT (project_id, visit_code, schema_id) DO UPDATE SET
+              sort_key = EXCLUDED.sort_key,
+              required = EXCLUDED.required,
+              updated_at = now()
+            WHERE crf_visit_forms.sort_key IS DISTINCT FROM EXCLUDED.sort_key
+               OR crf_visit_forms.required IS DISTINCT FROM EXCLUDED.required
           `,
-          [projectId, visitCode, schemaId, formIndex + 1],
+          [projectId, visitCode, form.schemaId, form.sortKey || createInitialSortKey(formIndex), nextFormSortOrder],
         )
+        nextFormSortOrder += 1
       }
     }
 
@@ -639,6 +726,164 @@ app.post("/api/crf-visit-plan", async (req, res, next) => {
     next(error)
   } finally {
     client.release()
+  }
+})
+
+app.post("/api/projects/:projectId/crf-visits", async (req, res, next) => {
+  const client = await pool.connect()
+  try {
+    const projectId = req.params.projectId.trim()
+    const body = req.body as { visitCode?: string; title?: string; sortKey?: string }
+    const visitCode = body.visitCode?.trim()
+    const title = body.title?.trim()
+    const sortKey = body.sortKey?.trim()
+
+    if (!projectId || !visitCode || !title || !sortKey) {
+      res.status(400).json({ error: "Bad Request", message: "项目、访视编号、标题和排序值不能为空" })
+      return
+    }
+
+    await client.query("BEGIN")
+    const visitSortOrder = await nextSortOrder(client, "visits", "")
+    const projectVisitSortOrder = await nextSortOrder(
+      client,
+      "crf_project_visits",
+      "WHERE project_id = $1",
+      [projectId],
+    )
+
+    await client.query(
+      `
+        INSERT INTO visits (code, title, sort_order)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (code) DO UPDATE SET title = EXCLUDED.title
+      `,
+      [visitCode, title, visitSortOrder],
+    )
+    await client.query(
+      `
+        INSERT INTO crf_project_visits (project_id, visit_code, title, sort_key, sort_order)
+        VALUES ($1, $2, $3, $4, $5)
+      `,
+      [projectId, visitCode, title, sortKey, projectVisitSortOrder],
+    )
+    await client.query("COMMIT")
+    res.status(201).json({ ok: true })
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined)
+    next(error)
+  } finally {
+    client.release()
+  }
+})
+
+app.patch("/api/projects/:projectId/crf-visits/:visitCode", async (req, res, next) => {
+  try {
+    const projectId = req.params.projectId.trim()
+    const visitCode = req.params.visitCode.trim()
+    const body = req.body as { title?: string; sortKey?: string }
+    const title = body.title?.trim()
+    const sortKey = body.sortKey?.trim()
+
+    await query(
+      `
+        UPDATE crf_project_visits
+        SET
+          title = COALESCE($3, title),
+          sort_key = COALESCE($4, sort_key),
+          updated_at = now()
+        WHERE project_id = $1 AND visit_code = $2
+      `,
+      [projectId, visitCode, title || null, sortKey || null],
+    )
+    if (title) {
+      await query("UPDATE visits SET title = $2 WHERE code = $1", [visitCode, title])
+    }
+    res.json({ ok: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.delete("/api/projects/:projectId/crf-visits/:visitCode", async (req, res, next) => {
+  try {
+    await query(
+      "DELETE FROM crf_project_visits WHERE project_id = $1 AND visit_code = $2",
+      [req.params.projectId.trim(), req.params.visitCode.trim()],
+    )
+    res.json({ ok: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post("/api/projects/:projectId/crf-visits/:visitCode/forms", async (req, res, next) => {
+  try {
+    const projectId = req.params.projectId.trim()
+    const visitCode = req.params.visitCode.trim()
+    const body = req.body as { schemaId?: string; sortKey?: string; required?: boolean }
+    const schemaId = body.schemaId?.trim()
+    const sortKey = body.sortKey?.trim()
+
+    if (!projectId || !visitCode || !schemaId || !sortKey) {
+      res.status(400).json({ error: "Bad Request", message: "项目、访视、表格和排序值不能为空" })
+      return
+    }
+
+    const sortOrder = await nextSortOrder(
+      pool,
+      "crf_visit_forms",
+      "WHERE project_id = $1 AND visit_code = $2",
+      [projectId, visitCode],
+    )
+    await query(
+      `
+        INSERT INTO crf_visit_forms (project_id, visit_code, schema_id, sort_key, sort_order, required)
+        VALUES ($1, $2, $3::uuid, $4, $5, $6)
+      `,
+      [projectId, visitCode, schemaId, sortKey, sortOrder, body.required ?? true],
+    )
+    res.status(201).json({ ok: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.patch("/api/projects/:projectId/crf-visits/:visitCode/forms/:schemaId", async (req, res, next) => {
+  try {
+    const body = req.body as { sortKey?: string; required?: boolean }
+    await query(
+      `
+        UPDATE crf_visit_forms
+        SET
+          sort_key = COALESCE($4, sort_key),
+          required = COALESCE($5, required),
+          updated_at = now()
+        WHERE project_id = $1 AND visit_code = $2 AND schema_id = $3::uuid
+      `,
+      [
+        req.params.projectId.trim(),
+        req.params.visitCode.trim(),
+        req.params.schemaId.trim(),
+        body.sortKey?.trim() || null,
+        typeof body.required === "boolean" ? body.required : null,
+      ],
+    )
+    res.json({ ok: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.delete("/api/projects/:projectId/crf-visits/:visitCode/forms/:schemaId", async (req, res, next) => {
+  try {
+    await query(
+      "DELETE FROM crf_visit_forms WHERE project_id = $1 AND visit_code = $2 AND schema_id = $3::uuid",
+      [req.params.projectId.trim(), req.params.visitCode.trim(), req.params.schemaId.trim()],
+    )
+    res.json({ ok: true })
+  } catch (error) {
+    next(error)
   }
 })
 
@@ -680,7 +925,10 @@ app.get("/api/crf-entry-tasks", async (req, res, next) => {
           cs.schema,
           cr.values,
           cr.status AS "recordStatus",
-          cpv.sort_order * 100 + cvf.sort_order AS "sortOrder",
+          row_number() OVER (
+            PARTITION BY s.id
+            ORDER BY cpv.sort_key, cvf.sort_key
+          )::integer AS "sortOrder",
           cs.created_at AS "createdAt",
           cs.published_at AS "publishedAt"
         FROM subjects s
@@ -694,7 +942,7 @@ app.get("/api/crf-entry-tasks", async (req, res, next) => {
          AND cr.visit_code = cpv.visit_code
          AND cr.schema_id = cs.id
         WHERE cpv.project_id = $1
-        ORDER BY s.screening_no, cpv.sort_order, cvf.sort_order
+        ORDER BY s.screening_no, cpv.sort_key, cvf.sort_key
       `,
       [projectId],
     )

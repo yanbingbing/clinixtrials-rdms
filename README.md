@@ -13,7 +13,7 @@ npm run dev
 本地默认数据库连接：
 
 ```bash
-DATABASE_URL=postgres://kydata:kydata@localhost:5432/kydata
+DATABASE_URL=postgres://clinixtrials:clinixtrials@localhost:5432/clinixtrials_rdms
 ```
 
 ## Vercel 部署
@@ -44,6 +44,12 @@ npm run db:generate
 
 ```bash
 npm run db:migrate
+```
+
+执行迁移并写入默认数据：
+
+```bash
+npm run db:init
 ```
 
 迁移不会在 Vercel build 阶段自动执行，需要手动跑。

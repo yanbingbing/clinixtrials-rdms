@@ -1,22 +1,22 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: kydata-postgres
+    container_name: clinixtrials-rdms-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: kydata
-      POSTGRES_USER: kydata
-      POSTGRES_PASSWORD: kydata
+      POSTGRES_DB: clinixtrials_rdms
+      POSTGRES_USER: clinixtrials
+      POSTGRES_PASSWORD: clinixtrials
     ports:
       - "5432:5432"
     volumes:
-      - kydata-postgres-data:/var/lib/postgresql/data
+      - clinixtrials-rdms-postgres-data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kydata -d kydata"]
+      test: ["CMD-SHELL", "pg_isready -U clinixtrials -d clinixtrials_rdms"]
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
-  kydata-postgres-data:
+  clinixtrials-rdms-postgres-data:

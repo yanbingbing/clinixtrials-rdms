@@ -8,7 +8,8 @@ const { Pool } = pg
 
 export const pool = new Pool({
   connectionString:
-    process.env.DATABASE_URL ?? "postgres://kydata:kydata@localhost:5432/kydata",
+    process.env.DATABASE_URL ??
+    "postgres://clinixtrials:clinixtrials@localhost:5432/clinixtrials_rdms",
   max: Number(process.env.PG_POOL_MAX ?? (process.env.VERCEL ? 1 : 10)),
   idleTimeoutMillis: 10_000,
 })

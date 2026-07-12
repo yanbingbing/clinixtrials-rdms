@@ -52,6 +52,21 @@ npm run db:migrate
 npm run db:init
 ```
 
+单独创建或重置默认登录账号：
+
+```bash
+npm run db:seed:auth
+```
+
+默认账号可以通过环境变量覆盖：
+
+```bash
+SEED_USER_EMAIL=me@example.com \
+SEED_USER_PASSWORD='change-me' \
+SEED_USER_NAME='默认管理员' \
+npm run db:seed:auth
+```
+
 迁移不会在 Vercel build 阶段自动执行，需要手动跑。
 
 ## API

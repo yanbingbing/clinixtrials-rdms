@@ -15,7 +15,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/db-seed.ts",
-    "db:init": "npm run db:migrate && npm run db:seed",
+    "db:seed:auth": "tsx scripts/seed-default-user.ts",
+    "db:init": "npm run db:migrate && npm run db:seed && npm run db:seed:auth",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "@tanstack/react-query": "^5.80.7",
     "@tanstack/react-router": "^1.120.15",
     "@tanstack/react-table": "^8.21.3",
+    "better-auth": "^1.6.23",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",

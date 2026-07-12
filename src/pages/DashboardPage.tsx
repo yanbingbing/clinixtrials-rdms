@@ -19,18 +19,18 @@ export function DashboardPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-      <section className="rounded-md border border-teal-100 bg-white px-6 py-5 shadow-sm">
+      <section className="panel px-6 py-5">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-sm font-medium text-primary">CRF 配置工作台</div>
             <h1 className="mt-2 text-2xl font-semibold text-slate-900">先从项目进入，再配置项目 CRF</h1>
             <p className="mt-3 text-sm leading-6 text-slate-500">
-              当前阶段只保留核心入口：项目管理负责进入具体项目，原子表格库负责维护可复用表格；项目下的 CRF 配置就是访视计划。
+              当前阶段只保留核心入口：项目管理负责进入具体项目，模块库负责维护可复用模块；项目下的 CRF 配置就是访视计划。
             </p>
           </div>
           <div className="grid min-w-[320px] grid-cols-3 gap-3">
             <Metric label="项目" value={projects.length} />
-            <Metric label="原子表格" value={schemas.length} />
+            <Metric label="模块" value={schemas.length} />
             <Metric label="访视" value={visits.length} />
           </div>
         </div>
@@ -47,11 +47,11 @@ export function DashboardPage() {
         />
         <HomeActionCard
           icon={FileText}
-          title="原子表格库"
-          description="维护 Visit、人口学特征、实验室检查等可复用表格，表格设计与访视计划解耦。"
+          title="模块库"
+          description="维护 Visit、人口学特征、实验室检查等可复用模块，模块设计与访视计划解耦。"
           to="/crf/forms"
-          buttonLabel="进入表格库"
-          meta={`${schemas.length} 张表格 / ${fieldCount} 个字段`}
+          buttonLabel="进入模块库"
+          meta={`${schemas.length} 个模块 / ${fieldCount} 个字段`}
         />
       </section>
 
@@ -59,8 +59,8 @@ export function DashboardPage() {
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-3">
             <div>
-              <CardTitle>最近的原子表格</CardTitle>
-              <div className="mt-2 text-sm text-slate-500">表格库是当前 CRF 配置的底座</div>
+              <CardTitle>最近的模块</CardTitle>
+              <div className="mt-2 text-sm text-slate-500">模块库是当前 CRF 配置的底座</div>
             </div>
             <Button asChild variant="outline" className="rounded-full">
               <Link to="/crf/forms">查看全部</Link>
@@ -90,7 +90,7 @@ export function DashboardPage() {
                 )
               })}
               {schemas.length === 0 ? (
-                <div className="py-8 text-center text-sm text-slate-500">还没有原子表格</div>
+                <div className="py-8 text-center text-sm text-slate-500">还没有模块</div>
               ) : null}
             </div>
           </CardContent>
@@ -113,7 +113,7 @@ export function DashboardPage() {
                       <div className="text-sm font-semibold text-slate-900">{visit.visitCode}</div>
                       <div className="mt-1 text-xs text-slate-500">{visit.title}</div>
                     </div>
-                    <Badge>{visit.forms.length} 张表格</Badge>
+                    <Badge>{visit.forms.length} 个模块</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {visit.forms.map((form) => (

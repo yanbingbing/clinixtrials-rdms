@@ -1,6 +1,7 @@
 import React from "react"
 import ReactDOM from "react-dom/client"
 import {
+  Outlet,
   RouterProvider,
   createRootRoute,
   createRoute,
@@ -23,128 +24,152 @@ import {
   ProjectsPage,
   RegistrationPage,
 } from "@/pages/GenericManagementPage"
+import { LoginPage } from "@/pages/LoginPage"
+import { OrganizationsPage } from "@/pages/OrganizationsPage"
 import { PatientsPage } from "@/pages/PatientsPage"
 import { ProjectOverviewPage } from "@/pages/ProjectOverviewPage"
 import { StatisticsPage } from "@/pages/StatisticsPage"
 import "@/index.css"
 
 const rootRoute = createRootRoute({
+  component: Outlet,
+})
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: LoginPage,
+})
+
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "app",
   component: AppShell,
 })
 
 const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/",
   component: DashboardPage,
 })
 
 const projectsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/projects",
   component: ProjectsPage,
 })
 
 const projectOverviewRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/projects/$projectId",
   component: ProjectOverviewPage,
 })
 
 const projectCrfRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/projects/$projectId/crf",
   component: CrfPlanPage,
 })
 
 const progressRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/progress",
   component: ProgressPage,
 })
 
 const patientsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/patients",
   component: PatientsPage,
 })
 
 const dataRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/data",
   component: DataManagementPage,
 })
 
 const crfDesignerRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/crf/designer",
   component: CrfPlanPage,
 })
 
 const crfFormsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/crf/forms",
   component: CrfFormsLibraryPage,
 })
 
 const crfFormDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/crf/forms/$schemaId",
   component: CrfDesignerPage,
 })
 
 const crfEntryRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/crf/entry",
   component: CrfEntryPage,
 })
 
 const statisticsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/statistics",
   component: StatisticsPage,
 })
 
 const accountsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/accounts",
   component: AccountsPage,
 })
 
+const organizationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/organizations",
+  component: OrganizationsPage,
+})
+
 const registrationRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/registration",
   component: RegistrationPage,
 })
 
 const entryRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/entry",
   component: DataEntryPage,
 })
 
 const entryDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/entry/detail",
   component: DataDetailPage,
 })
 
 const routeTree = rootRoute.addChildren([
-  indexRoute,
-  projectsRoute,
-  projectOverviewRoute,
-  projectCrfRoute,
-  progressRoute,
-  patientsRoute,
-  dataRoute,
-  crfDesignerRoute,
-  crfFormsRoute,
-  crfFormDetailRoute,
-  crfEntryRoute,
-  statisticsRoute,
-  accountsRoute,
-  registrationRoute,
-  entryRoute,
-  entryDetailRoute,
+  loginRoute,
+  appRoute.addChildren([
+    indexRoute,
+    projectsRoute,
+    projectOverviewRoute,
+    projectCrfRoute,
+    progressRoute,
+    patientsRoute,
+    dataRoute,
+    crfDesignerRoute,
+    crfFormsRoute,
+    crfFormDetailRoute,
+    crfEntryRoute,
+    statisticsRoute,
+    accountsRoute,
+    organizationsRoute,
+    registrationRoute,
+    entryRoute,
+    entryDetailRoute,
+  ]),
 ])
 
 const router = createRouter({ routeTree })

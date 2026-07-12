@@ -1,30 +1,56 @@
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Link, Outlet, useRouterState } from "@tanstack/react-router"
+import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
+  Building2,
   FileText,
   FolderKanban,
   Home,
+  LogOut,
   Plus,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { CreateProjectDialog } from "@/components/layout/CreateProjectDialog"
+import { authClient, useSession } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
 
 const navItems = [
   { label: "首页", to: "/", icon: Home },
   { label: "项目管理", to: "/projects", icon: FolderKanban },
-  { label: "原子表格库", to: "/crf/forms", icon: FileText },
+  { label: "模块库", to: "/crf/forms", icon: FileText },
+  { label: "组织管理", to: "/organizations", icon: Building2 },
 ] as const
 
 export function AppShell() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
+  const { data: session, isPending } = useSession()
+  const { data: activeOrganization } = authClient.useActiveOrganization()
+
+  if (isPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f7fafb] text-sm text-slate-500">
+        正在加载…
+      </div>
+    )
+  }
+
+  if (!session) {
+    return <Navigate to="/login" />
+  }
+
+  const userName = session.user.name || session.user.email
+
+  const handleSignOut = async () => {
+    await authClient.signOut()
+    void navigate({ to: "/login" })
+  }
 
   return (
-    <div className="min-h-screen bg-[#f4f8f7] text-slate-700">
+    <div className="min-h-screen bg-[#f7fafb] text-slate-700">
       <header className="sticky top-0 z-30 h-[92px] bg-primary text-white shadow-sm">
         <div className="flex h-full items-center justify-between gap-5 px-6">
           <div className="flex min-w-0 items-center gap-4">
@@ -53,22 +79,32 @@ export function AppShell() {
             <div className="hidden items-center gap-3 md:flex">
               <div className="h-10 w-10 overflow-hidden rounded-full border-2 border-white/70 bg-slate-200">
                 <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-300 text-sm font-semibold text-slate-700">
-                  石
+                  {userName.slice(0, 1)}
                 </div>
               </div>
-              <div className="whitespace-nowrap text-sm font-semibold">石磊 主任医师</div>
+              <div className="min-w-0">
+                <div className="max-w-[160px] truncate text-sm font-semibold">{userName}</div>
+                <div className="max-w-[160px] truncate text-xs text-white/80">
+                  {activeOrganization ? activeOrganization.name : "未加入组织"}
+                </div>
+              </div>
             </div>
             <div className="hidden h-8 w-px bg-white/55 lg:block" />
-            <div className="hidden text-right lg:block">
-              <div className="text-xl font-semibold leading-5">20:12:16</div>
-              <div className="text-sm text-white/90">2026-01-12</div>
-            </div>
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              className="hidden h-9 items-center gap-1.5 rounded-full px-3 text-sm text-white/90 transition-colors hover:bg-white/15 hover:text-white md:flex"
+              title="退出登录"
+            >
+              <LogOut className="h-4 w-4" />
+              退出
+            </button>
           </div>
         </div>
       </header>
 
-      <div className="flex">
-        <aside className="sticky top-[92px] hidden h-[calc(100vh-92px)] w-[180px] shrink-0 border-r border-teal-100/80 bg-gradient-to-b from-teal-50 to-white px-5 py-4 lg:block">
+      <div className="app-workspace-bg flex min-h-[calc(100vh-92px)]">
+        <aside className="sticky top-[92px] hidden h-[calc(100vh-92px)] w-[188px] shrink-0 border-r border-white/70 bg-transparent px-5 py-5 lg:block">
           <nav className="flex flex-col gap-2">
             {navItems.map((item) => {
               const Icon = item.icon
@@ -91,8 +127,8 @@ export function AppShell() {
           </nav>
         </aside>
 
-        <main className="min-w-0 flex-1">
-          <div className="p-4">
+        <main className="relative min-w-0 flex-1 bg-transparent">
+          <div className="p-4 md:p-5 xl:p-6">
             <Outlet />
           </div>
         </main>

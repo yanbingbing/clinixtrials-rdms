@@ -23,7 +23,7 @@ import { useProjectsQuery, useSubjectsQuery } from "@/hooks/useApiData"
 import type { ProjectProgressRow } from "@/lib/api"
 
 export function ProjectOverviewPage() {
-  const { projectId } = useParams({ from: "/projects/$projectId" })
+  const { projectId } = useParams({ from: "/app/projects/$projectId" })
   const projectsQuery = useProjectsQuery()
   const subjectsQuery = useSubjectsQuery()
   const projects = (projectsQuery.data ?? projectProgress) as Array<Partial<ProjectProgressRow> & { id: string; start: string; end: string; status: string; progress: number }>

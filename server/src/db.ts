@@ -2,6 +2,7 @@ import pg from "pg"
 import type { QueryResultRow } from "pg"
 import { drizzle } from "drizzle-orm/node-postgres"
 
+import * as authSchema from "./auth-schema"
 import * as schema from "./schema"
 
 const { Pool } = pg
@@ -14,7 +15,7 @@ export const pool = new Pool({
   idleTimeoutMillis: 10_000,
 })
 
-export const drizzleDb = drizzle(pool, { schema })
+export const drizzleDb = drizzle(pool, { schema: { ...schema, ...authSchema } })
 
 export async function query<T extends QueryResultRow>(text: string, params: unknown[] = []) {
   return pool.query<T>(text, params)

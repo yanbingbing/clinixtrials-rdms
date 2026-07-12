@@ -2,9 +2,11 @@ import "dotenv/config"
 
 import cors from "cors"
 import express from "express"
+import { fromNodeHeaders, toNodeHandler } from "better-auth/node"
 import { randomUUID } from "node:crypto"
 
 import { createInitialSortKey } from "../../shared/sort-key"
+import { auth } from "./auth"
 import { closePool, pool, query } from "./db"
 
 export const app = express()
@@ -27,7 +29,16 @@ async function nextSortOrder(
   return (result.rows[0]?.max ?? -1) + 1
 }
 
-app.use(cors())
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+)
+
+// better-auth 处理 /api/auth/** 下的全部认证路由，必须挂在 express.json() 之前
+app.all("/api/auth/*splat", toNodeHandler(auth))
+
 app.use(express.json())
 
 app.get("/api/health", async (_req, res, next) => {
@@ -38,6 +49,36 @@ app.get("/api/health", async (_req, res, next) => {
     next(error)
   }
 })
+
+app.get("/api/me", async (req, res, next) => {
+  try {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    })
+    res.json(session)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// 除 /api/auth、/api/health、/api/me 之外的业务 API 都要求登录
+const requireAuth: express.RequestHandler = async (req, res, next) => {
+  try {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    })
+    if (!session) {
+      res.status(401).json({ error: "Unauthorized", message: "请先登录" })
+      return
+    }
+    res.locals.session = session
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
+
+app.use("/api", requireAuth)
 
 app.get("/api/projects", async (_req, res, next) => {
   try {

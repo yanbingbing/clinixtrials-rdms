@@ -1,54 +1,58 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, Plus, Save, Send, Table2, Trash2 } from "lucide-react"
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Eye,
+  ListTree,
+  Plus,
+  RotateCcw,
+  Save,
+  Send,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { CrfFieldInput } from "@/components/crf/CrfFieldInput"
+import { FieldConfigPanel, normalizeKey } from "@/components/crf/FieldConfigPanel"
+import { FieldGridList } from "@/components/crf/FieldGridList"
 import {
   useCrfSchemasQuery,
   usePublishCrfSchemaMutation,
   useSaveCrfSchemaMutation,
 } from "@/hooks/useApiData"
+import { validateExpression } from "@/lib/crf-expression"
 import {
+  applyFieldDrop,
+  createEmptyValues,
   createFieldNode,
-  crfFieldTypes,
+  crfCreatableFieldTypes,
+  crfFieldTypeLabels,
   flattenCrfFields,
+  isFieldVisible,
+  resolveComputedValues,
+  validateSchemaValues,
   type CrfFieldNode,
   type CrfFieldType,
   type CrfNode,
-  type CrfOption,
   type CrfSchema,
   type CrfSectionNode,
 } from "@/lib/crf"
 import { cn } from "@/lib/utils"
-
-const fieldTypeLabels: Record<CrfFieldType, string> = {
-  text: "短文本",
-  long_text: "长文本",
-  integer: "整数",
-  decimal: "小数",
-  date: "日期",
-  datetime: "日期时间",
-  boolean: "布尔",
-  single_select: "单选",
-  multi_select: "多选",
-  file: "文件",
-  computed: "计算字段",
-  detail_table: "明细表格",
-}
 
 function createDraftSchema(index: number): CrfSchema {
   return {
     schemaVersion: "1.0",
     id: crypto.randomUUID(),
     projectId: "ON101",
-    code: `atom_${index}`,
-    name: "新原子表格",
+    code: `form_${index}`,
+    name: "新模块",
     version: 1,
     status: "draft",
     category: "atomic",
@@ -64,7 +68,7 @@ function createDraftSchema(index: number): CrfSchema {
 }
 
 export function CrfDesignerPage() {
-  const params = useParams({ from: "/crf/forms/$schemaId" })
+  const params = useParams({ from: "/app/crf/forms/$schemaId" })
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const schemasQuery = useCrfSchemasQuery("ON101")
@@ -72,27 +76,35 @@ export function CrfDesignerPage() {
   const publishMutation = usePublishCrfSchemaMutation()
   const [schema, setSchema] = useState<CrfSchema>(() => createDraftSchema(1))
   const [selectedFieldId, setSelectedFieldId] = useState("")
-  const [draggingFieldId, setDraggingFieldId] = useState("")
+  const [mode, setMode] = useState<"edit" | "preview">("edit")
 
   const schemas = schemasQuery.data ?? []
   const fields = useMemo(() => flattenCrfFields(schema.nodes), [schema.nodes])
   const selectedField = fields.find((field) => field.id === selectedFieldId) ?? fields[0]
   const isNew = params.schemaId === "new"
+  const issues = useMemo(() => collectSchemaIssues(schema), [schema])
+
+  // 每个路由参数只初始化一次，避免列表刷新（窗口聚焦重拉等）把正在编辑的内容重置掉
+  const loadedSchemaIdRef = useRef("")
 
   useEffect(() => {
     if (isNew) {
-      const draft = createDraftSchema(schemas.length + 1)
+      if (loadedSchemaIdRef.current === "new") return
+      loadedSchemaIdRef.current = "new"
+      const draft = createDraftSchema((schemasQuery.data?.length ?? 0) + 1)
       setSchema(draft)
       setSelectedFieldId(flattenCrfFields(draft.nodes)[0]?.id ?? "")
       return
     }
 
-    const selected = schemas.find((item) => item.id === params.schemaId)
+    if (loadedSchemaIdRef.current === params.schemaId) return
+    const selected = schemasQuery.data?.find((item) => item.id === params.schemaId)
     if (!selected) return
+    loadedSchemaIdRef.current = params.schemaId
     const loaded = structuredClone(selected)
     setSchema({ ...loaded, category: "atomic" })
     setSelectedFieldId(flattenCrfFields(loaded.nodes)[0]?.id ?? "")
-  }, [isNew, params.schemaId, schemas])
+  }, [isNew, params.schemaId, schemasQuery.data])
 
   const updateSchemaMeta = (patch: Partial<Pick<CrfSchema, "code" | "name" | "version">>) => {
     setSchema((current) => ({ ...current, ...patch, category: "atomic", status: "draft" }))
@@ -107,16 +119,32 @@ export function CrfDesignerPage() {
     }))
   }
 
-  const addField = (type: CrfFieldType = "text") => {
+  const addField = (type: CrfFieldType) => {
+    const existingKeys = new Set(fields.map((field) => field.key))
+    let index = fields.length + 1
+    while (existingKeys.has(`field_${index}`)) index += 1
+
     const newField = createFieldNode({
-      label: type === "detail_table" ? "明细字段" : "新字段",
-      key: type === "detail_table" ? `detail_${fields.length + 1}` : `field_${fields.length + 1}`,
+      label: `新${crfFieldTypeLabels[type]}字段`,
+      key: `field_${index}`,
       type,
-      detail: type === "detail_table" ? { displayMode: "inline_table" } : undefined,
+      options:
+        type === "single_select" || type === "multi_select"
+          ? [
+              { label: "选项 1", value: "1" },
+              { label: "选项 2", value: "2" },
+            ]
+          : undefined,
+      compute: type === "computed" ? { expression: "" } : undefined,
+      detail:
+        type === "detail_table"
+          ? { fields: [createFieldNode({ key: "col_1", label: "子字段 1", type: "text", table: { width: 140 } })] }
+          : undefined,
       table: { width: type === "detail_table" ? 220 : 160 },
     })
     setSchema((current) => ({ ...current, status: "draft", nodes: appendFieldToFirstSection(current.nodes, newField) }))
     setSelectedFieldId(newField.id)
+    setMode("edit")
   }
 
   const deleteSelectedField = () => {
@@ -138,6 +166,7 @@ export function CrfDesignerPage() {
   }
 
   const publishSchema = async () => {
+    if (issues.length > 0) return
     const published = await publishMutation.mutateAsync(schema.id)
     setSchema(published)
     await queryClient.invalidateQueries({ queryKey: ["crf-schemas"] })
@@ -146,7 +175,7 @@ export function CrfDesignerPage() {
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-124px)] gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid min-h-[calc(100vh-124px)] gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <main className="min-w-0">
         <Card className="min-h-full">
           <CardHeader className="border-b bg-white/80">
@@ -156,13 +185,13 @@ export function CrfDesignerPage() {
                   <Button asChild variant="ghost" size="sm" className="rounded-full px-2 text-slate-500">
                     <Link to="/crf/forms">
                       <ArrowLeft className="mr-2 h-4 w-4" />
-                      返回表格库
+                      返回模块库
                     </Link>
                   </Button>
                 </div>
                 <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_220px_120px]">
                   <label className="space-y-2 text-sm">
-                    <span className="font-medium text-slate-600">表格名称</span>
+                    <span className="font-medium text-slate-600">模块名称</span>
                     <Input
                       className="h-11 text-lg font-semibold"
                       value={schema.name}
@@ -170,7 +199,7 @@ export function CrfDesignerPage() {
                     />
                   </label>
                   <label className="space-y-2 text-sm">
-                    <span className="font-medium text-slate-600">表格编码</span>
+                    <span className="font-medium text-slate-600">模块编码</span>
                     <Input value={schema.code} onChange={(event) => updateSchemaMeta({ code: normalizeKey(event.target.value) })} />
                   </label>
                   <label className="space-y-2 text-sm">
@@ -187,7 +216,12 @@ export function CrfDesignerPage() {
                   <Save className="mr-2 h-4 w-4" />
                   保存
                 </Button>
-                <Button className="rounded-full" onClick={publishSchema} disabled={publishMutation.isPending || isNew || schema.status === "published"}>
+                <Button
+                  className="rounded-full"
+                  onClick={publishSchema}
+                  disabled={publishMutation.isPending || isNew || schema.status === "published" || issues.length > 0}
+                  title={issues.length > 0 ? "请先解决配置问题" : undefined}
+                >
                   <Send className="mr-2 h-4 w-4" />
                   发布
                 </Button>
@@ -195,68 +229,72 @@ export function CrfDesignerPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5 pt-5">
+            {issues.length > 0 ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                  <AlertTriangle className="h-4 w-4" />
+                  发布前需要解决 {issues.length} 个配置问题
+                </div>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-amber-700">
+                  {issues.map((issue, index) => (
+                    <li key={index}>{issue}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <CardTitle>字段结构</CardTitle>
-                <div className="mt-2 text-sm text-slate-500">点击字段后在右侧配置面板编辑属性</div>
+              <div className="flex items-center gap-1 rounded-full border bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setMode("edit")}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm transition-colors",
+                    mode === "edit" ? "bg-white font-medium text-slate-800 shadow-sm" : "text-slate-500",
+                  )}
+                >
+                  <ListTree className="h-4 w-4" />
+                  字段结构
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("preview")}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm transition-colors",
+                    mode === "preview" ? "bg-white font-medium text-slate-800 shadow-sm" : "text-slate-500",
+                  )}
+                >
+                  <Eye className="h-4 w-4" />
+                  预览表单
+                </button>
               </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" className="rounded-full" onClick={() => addField("detail_table")}>
-                  <Table2 className="mr-2 h-4 w-4" />
-                  明细字段
-                </Button>
-                <Button size="sm" className="rounded-full" onClick={() => addField("text")}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  添加字段
-                </Button>
-              </div>
+              <AddFieldButton onAdd={addField} />
             </div>
 
-            <div className="rounded-md border bg-slate-50 p-3">
-              <div className="space-y-2">
-                {fields.map((field, index) => (
-                  <button
-                    key={field.id}
-                    type="button"
-                    draggable
-                    onDragStart={() => setDraggingFieldId(field.id)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={() => {
-                      setSchema((current) => ({ ...current, status: "draft", nodes: moveFieldBeforeInFirstSection(current.nodes, draggingFieldId, field.id) }))
-                      setDraggingFieldId("")
-                    }}
-                    onClick={() => setSelectedFieldId(field.id)}
-                    className={cn(
-                      "grid w-full grid-cols-[24px_1fr_88px_32px_32px] items-center gap-3 rounded-md border bg-white px-4 py-3 text-left text-sm shadow-sm transition-colors",
-                      selectedField?.id === field.id && "border-primary bg-primary/8 ring-1 ring-primary/20",
-                    )}
-                  >
-                    <GripVertical className="h-4 w-4 text-slate-400" />
-                    <span className="min-w-0">
-                      <span className="block truncate font-semibold text-slate-700">
-                        {field.label}{field.required ? <span className="ml-1 text-rose-500">*</span> : null}
-                      </span>
-                      <span className="text-xs text-slate-400">{field.key}{field.unit ? ` · ${field.unit}` : ""}</span>
-                    </span>
-                    <Badge className={field.type === "detail_table" ? "bg-cyan-100 text-cyan-700" : "bg-slate-100 text-slate-600"}>
-                      {fieldTypeLabels[field.type]}
-                    </Badge>
-                    <span className="inline-flex h-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={(event) => {
-                      event.stopPropagation()
-                      setSchema((current) => ({ ...current, status: "draft", nodes: reorderFieldInFirstSection(current.nodes, field.id, -1) }))
-                    }}>
-                      <ArrowUp className={cn("h-4 w-4", index === 0 && "opacity-25")} />
-                    </span>
-                    <span className="inline-flex h-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={(event) => {
-                      event.stopPropagation()
-                      setSchema((current) => ({ ...current, status: "draft", nodes: reorderFieldInFirstSection(current.nodes, field.id, 1) }))
-                    }}>
-                      <ArrowDown className={cn("h-4 w-4", index === fields.length - 1 && "opacity-25")} />
-                    </span>
-                  </button>
-                ))}
+            {mode === "edit" ? (
+              <div className="rounded-md border bg-slate-50 p-3">
+                <div className="mb-2 text-xs text-slate-400">
+                  拖到字段上/下方调整顺序；拖到字段左/右边缘可两个字段并排一行
+                </div>
+                <FieldGridList
+                  fields={fields}
+                  selectedFieldId={selectedField?.id}
+                  onSelect={setSelectedFieldId}
+                  onDrop={(sourceId, targetId, zone) => {
+                    setSchema((current) => ({
+                      ...current,
+                      status: "draft",
+                      nodes: applyFieldDrop(current.nodes, sourceId, targetId, zone),
+                    }))
+                  }}
+                  onReorder={(fieldId, direction) => {
+                    setSchema((current) => ({ ...current, status: "draft", nodes: reorderFieldInFirstSection(current.nodes, fieldId, direction) }))
+                  }}
+                />
               </div>
-            </div>
+            ) : (
+              <SchemaPreview schema={schema} />
+            )}
           </CardContent>
         </Card>
       </main>
@@ -276,7 +314,7 @@ export function CrfDesignerPage() {
           </CardHeader>
           <CardContent className="h-[calc(100%-86px)] overflow-y-auto pt-5">
             {selectedField ? (
-              <FieldEditor field={selectedField} schemas={schemas} currentSchemaId={schema.id} onChange={updateSelectedField} />
+              <FieldConfigPanel field={selectedField} scopeFields={fields} onChange={updateSelectedField} />
             ) : (
               <div className="rounded-md border border-dashed p-8 text-center text-sm text-slate-500">请选择字段</div>
             )}
@@ -287,164 +325,161 @@ export function CrfDesignerPage() {
   )
 }
 
-function FieldEditor({
-  field,
-  schemas,
-  currentSchemaId,
-  onChange,
-}: {
-  field: CrfFieldNode
-  schemas: CrfSchema[]
-  currentSchemaId: string
-  onChange: (patch: Partial<CrfFieldNode>) => void
-}) {
-  const optionsText = useMemo(() => optionsToText(field.options), [field.options])
-  const childSchemas = schemas.filter((item) => item.id !== currentSchemaId)
+function AddFieldButton({ onAdd }: { onAdd: (type: CrfFieldType) => void }) {
+  const [open, setOpen] = useState(false)
 
   return (
-    <div className="space-y-4">
-      <label className="space-y-2 text-sm">
-        <span className="font-medium text-slate-600">字段名称</span>
-        <Input value={field.label} onChange={(event) => onChange({ label: event.target.value })} />
-      </label>
-      <label className="space-y-2 text-sm">
-        <span className="font-medium text-slate-600">字段 Key</span>
-        <Input value={field.key} onChange={(event) => onChange({ key: normalizeKey(event.target.value) })} />
-      </label>
-      <label className="space-y-2 text-sm">
-        <span className="font-medium text-slate-600">字段类型</span>
-        <Select
-          value={field.type}
-          onValueChange={(value) => {
-            const nextType = value as CrfFieldType
-            onChange({
-              type: nextType,
-              detail: nextType === "detail_table" ? { displayMode: "inline_table", ...field.detail } : field.detail,
-            })
-          }}
-        >
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {crfFieldTypes.map((type) => <SelectItem key={type} value={type}>{fieldTypeLabels[type]}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </label>
-
-      {field.type === "detail_table" ? (
-        <div className="rounded-md border bg-cyan-50/60 p-3">
-          <div className="mb-3 text-sm font-semibold text-cyan-800">明细表格</div>
-          <label className="space-y-2 text-sm">
-            <span className="font-medium text-slate-600">关联子表格</span>
-            <Select
-              value={field.detail?.targetSchemaId ?? "__none"}
-              onValueChange={(value) => {
-                const target = childSchemas.find((item) => item.id === value)
-                onChange({
-                  detail: {
-                    ...field.detail,
-                    targetSchemaId: value === "__none" ? undefined : value,
-                    targetSchemaCode: target?.code,
-                    displayMode: field.detail?.displayMode ?? "inline_table",
-                  },
-                })
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" className="rounded-full">
+          <Plus className="mr-2 h-4 w-4" />
+          添加字段
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72" align="end">
+        <div className="mb-2 text-xs font-medium text-slate-500">选择字段类型</div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {crfCreatableFieldTypes.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={cn(
+                "rounded-md border px-2 py-2 text-sm text-slate-600 transition-colors hover:border-primary/40 hover:bg-primary/5",
+                type === "detail_table" && "text-cyan-700",
+                type === "computed" && "text-violet-700",
+              )}
+              onClick={() => {
+                onAdd(type)
+                setOpen(false)
               }}
             >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">未选择</SelectItem>
-                {childSchemas.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <label className="space-y-2 text-sm">
-              <span className="font-medium text-slate-600">最少行</span>
-              <Input
-                type="number"
-                value={field.detail?.minRows ?? ""}
-                onChange={(event) => onChange({ detail: { ...field.detail, minRows: event.target.value === "" ? undefined : Number(event.target.value) } })}
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span className="font-medium text-slate-600">最多行</span>
-              <Input
-                type="number"
-                value={field.detail?.maxRows ?? ""}
-                onChange={(event) => onChange({ detail: { ...field.detail, maxRows: event.target.value === "" ? undefined : Number(event.target.value) } })}
-              />
-            </label>
-          </div>
-          <div className="mt-3 text-xs leading-5 text-slate-500">
-            明细字段表示一组可重复子记录，不是 Lookup。
-          </div>
+              {crfFieldTypeLabels[type]}
+            </button>
+          ))}
         </div>
-      ) : null}
+      </PopoverContent>
+    </Popover>
+  )
+}
 
-      <label className="space-y-2 text-sm">
-        <span className="font-medium text-slate-600">单位</span>
-        <Input value={field.unit ?? ""} onChange={(event) => onChange({ unit: event.target.value || undefined })} />
-      </label>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="space-y-2 text-sm">
-          <span className="font-medium text-slate-600">最小值</span>
-          <Input type="number" value={field.validation?.min ?? ""} onChange={(event) => onChange({ validation: { ...field.validation, min: event.target.value === "" ? undefined : Number(event.target.value) } })} />
-        </label>
-        <label className="space-y-2 text-sm">
-          <span className="font-medium text-slate-600">最大值</span>
-          <Input type="number" value={field.validation?.max ?? ""} onChange={(event) => onChange({ validation: { ...field.validation, max: event.target.value === "" ? undefined : Number(event.target.value) } })} />
-        </label>
+/** 设计器内的实时预览：可以直接试填，公式和联动即时生效 */
+function SchemaPreview({ schema }: { schema: CrfSchema }) {
+  const [values, setValues] = useState<Record<string, unknown>>(() => createEmptyValues(schema))
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [checked, setChecked] = useState(false)
+
+  const displayValues = useMemo(() => resolveComputedValues(schema, values), [schema, values])
+  const visibleFields = useMemo(
+    () => flattenCrfFields(schema.nodes).filter((field) => isFieldVisible(field, displayValues)),
+    [schema.nodes, displayValues],
+  )
+
+  const runValidation = () => {
+    setErrors(validateSchemaValues(schema, displayValues))
+    setChecked(true)
+  }
+
+  const reset = () => {
+    setValues(createEmptyValues(schema))
+    setErrors({})
+    setChecked(false)
+  }
+
+  const errorCount = Object.keys(errors).length
+
+  return (
+    <div className="rounded-md border bg-slate-50 p-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm text-slate-500">试填表单验证配置效果；公式、联动、校验都会即时生效</div>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={reset}>
+            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+            清空
+          </Button>
+          <Button type="button" size="sm" className="rounded-full" onClick={runValidation}>
+            <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+            模拟提交校验
+          </Button>
+        </div>
       </div>
-      <label className="space-y-2 text-sm">
-        <span className="font-medium text-slate-600">列宽</span>
-        <Input type="number" value={field.table?.width ?? 160} onChange={(event) => onChange({ table: { ...field.table, width: Number(event.target.value) || 160 } })} />
-      </label>
-      <div className="grid grid-cols-3 gap-3 rounded-md border bg-white p-3">
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <Checkbox checked={field.required ?? false} onCheckedChange={(checked) => onChange({ required: checked === true })} />
-          必填
-        </label>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <Checkbox checked={field.table?.sortable ?? true} onCheckedChange={(checked) => onChange({ table: { ...field.table, sortable: checked === true } })} />
-          排序
-        </label>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <Checkbox checked={field.table?.editable ?? true} onCheckedChange={(checked) => onChange({ table: { ...field.table, editable: checked === true } })} />
-          可编辑
-        </label>
-      </div>
-      {field.type === "single_select" || field.type === "multi_select" ? (
-        <label className="space-y-2 text-sm">
-          <span className="font-medium text-slate-600">选项</span>
-          <textarea
-            className="min-h-28 w-full rounded-md border border-input bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            value={optionsText}
-            onChange={(event) => onChange({ options: textToOptions(event.target.value) })}
-          />
-        </label>
+      {checked ? (
+        errorCount > 0 ? (
+          <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
+            共 {errorCount} 处未通过校验
+          </div>
+        ) : (
+          <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+            全部校验通过
+          </div>
+        )
       ) : null}
+      <div className="crf-grid">
+        {visibleFields.map((field) => (
+          <CrfFieldInput
+            key={field.id}
+            field={field}
+            value={displayValues[field.key]}
+            error={checked ? errors[field.key] : undefined}
+            errors={checked ? errors : undefined}
+            onChange={(nextValue) => {
+              setValues((current) => {
+                const next = { ...current, [field.key]: nextValue }
+                if (checked) setErrors(validateSchemaValues(schema, resolveComputedValues(schema, next)))
+                return next
+              })
+            }}
+          />
+        ))}
+      </div>
     </div>
   )
 }
 
-function normalizeKey(value: string) {
-  return value.replace(/[^a-zA-Z0-9_]/g, "")
-}
+/** 发布前的 schema 完整性检查 */
+function collectSchemaIssues(schema: CrfSchema): string[] {
+  const issues: string[] = []
+  const fields = flattenCrfFields(schema.nodes)
 
-function optionsToText(options?: CrfOption[]) {
-  return options?.map((option) => `${option.label}=${option.value}`).join("\n") ?? ""
-}
+  const checkScope = (scopeFields: CrfFieldNode[], scopeName: string) => {
+    const seenKeys = new Map<string, number>()
+    for (const field of scopeFields) {
+      seenKeys.set(field.key, (seenKeys.get(field.key) ?? 0) + 1)
+    }
+    for (const [key, count] of seenKeys) {
+      if (count > 1) issues.push(`${scopeName}存在重复的字段 Key「${key}」`)
+    }
 
-function textToOptions(value: string): CrfOption[] {
-  return value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [label, optionValue] = line.split("=")
-      return { label: label.trim(), value: (optionValue ?? label).trim() }
-    })
+    for (const field of scopeFields) {
+      const name = `${scopeName}字段「${field.label || field.key}」`
+      if (!field.label.trim()) issues.push(`${scopeName}存在未命名字段（${field.key}）`)
+      if (!field.key.trim()) issues.push(`${name}缺少 Key`)
+      if ((field.type === "single_select" || field.type === "multi_select") && !(field.options?.length)) {
+        issues.push(`${name}还没有配置选项`)
+      }
+      if (field.type === "computed") {
+        const availableKeys = scopeFields.filter((item) => item.id !== field.id).map((item) => item.key)
+        const error = validateExpression(field.compute?.expression ?? "", availableKeys)
+        if (error) issues.push(`${name}的公式无效：${error}`)
+      }
+      if (field.visibility?.field && !scopeFields.some((item) => item.key === field.visibility?.field)) {
+        issues.push(`${name}的联动依赖字段「${field.visibility.field}」不存在`)
+      }
+    }
+  }
+
+  checkScope(fields, "")
+
+  for (const field of fields) {
+    if (field.type !== "detail_table") continue
+    const subFields = field.detail?.fields ?? []
+    if (subFields.length === 0) {
+      issues.push(`子表「${field.label}」还没有子字段`)
+      continue
+    }
+    checkScope(subFields, `子表「${field.label}」内`)
+  }
+
+  return issues
 }
 
 function updateFieldInNodes(nodes: CrfNode[], fieldId: string, patch: Partial<CrfFieldNode>): CrfNode[] {
@@ -481,14 +516,3 @@ function reorderFieldInFirstSection(nodes: CrfNode[], fieldId: string, direction
   return [{ ...first, children }, ...rest]
 }
 
-function moveFieldBeforeInFirstSection(nodes: CrfNode[], sourceFieldId: string, targetFieldId: string): CrfNode[] {
-  if (!sourceFieldId || nodes[0]?.kind !== "section") return nodes
-  const [first, ...rest] = nodes
-  const children = [...first.children]
-  const sourceIndex = children.findIndex((node) => node.kind === "field" && node.id === sourceFieldId)
-  const targetIndex = children.findIndex((node) => node.kind === "field" && node.id === targetFieldId)
-  if (sourceIndex < 0 || targetIndex < 0) return nodes
-  const [moved] = children.splice(sourceIndex, 1)
-  children.splice(sourceIndex < targetIndex ? targetIndex - 1 : targetIndex, 0, moved)
-  return [{ ...first, children }, ...rest]
-}

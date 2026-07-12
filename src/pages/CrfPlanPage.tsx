@@ -25,7 +25,7 @@ import {
   useCrfVisitPlanQuery,
 } from "@/hooks/useApiData"
 import { api } from "@/lib/api"
-import { flattenCrfFields, type CrfFieldType, type CrfSchema } from "@/lib/crf"
+import { crfFieldTypeLabels as fieldTypeLabels, flattenCrfFields, type CrfSchema } from "@/lib/crf"
 import { cn } from "@/lib/utils"
 import { createInitialSortKey, sortKeyBetween } from "@shared/sort-key"
 
@@ -241,7 +241,7 @@ export function CrfPlanPage() {
             <div>
               <CardTitle>访视计划配置</CardTitle>
               <div className="mt-2 text-sm text-slate-500">
-                项目 {projectId} 的 CRF 配置：先定义受试者的访视路径，再给每次访视挑选需要填写的表格
+                项目 {projectId} 的 CRF 配置：先定义受试者的访视路径，再给每次访视挑选需要填写的模块
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -418,7 +418,7 @@ export function CrfPlanPage() {
                         />
 
                         {selectedForms.length === 0 ? (
-                          <span className="text-sm text-slate-400">还没有添加表格</span>
+                          <span className="text-sm text-slate-400">还没有添加模块</span>
                         ) : null}
                       </div>
                     </div>
@@ -505,7 +505,7 @@ function FormPicker({
           onClick={(event) => event.stopPropagation()}
         >
           <Plus className="mr-2 h-4 w-4" />
-          添加表格
+          添加模块
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80" onClick={(event) => event.stopPropagation()}>
@@ -514,7 +514,7 @@ function FormPicker({
             <Input
               autoFocus
               className="h-10 pl-9"
-              placeholder="搜索原子表格"
+              placeholder="搜索模块"
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
             />
@@ -540,7 +540,7 @@ function FormPicker({
 
             {filteredForms.length === 0 ? (
               <div className="rounded-md bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">
-                没有匹配的原子表格
+                没有匹配的模块
               </div>
             ) : null}
           </div>
@@ -549,7 +549,7 @@ function FormPicker({
             <Button asChild variant="outline" className="w-full rounded-full">
               <Link to="/crf/forms/$schemaId" params={{ schemaId: "new" }}>
                 <Plus className="mr-2 h-4 w-4" />
-                添加表格
+                新建模块
               </Link>
             </Button>
           </div>
@@ -644,7 +644,7 @@ function FormModuleCard({
             event.stopPropagation()
             onToggle()
           }}
-          title={expanded ? "收起表单预览" : "展开表单预览"}
+          title={expanded ? "收起模块预览" : "展开模块预览"}
         >
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
@@ -671,7 +671,7 @@ function FormModuleCard({
             event.stopPropagation()
             onRemove()
           }}
-          title="移除表单"
+          title="移除模块"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -720,21 +720,6 @@ function DropLine({ position }: { position: "top" | "bottom" }) {
       <span className="absolute -left-1 -top-1.5 h-3 w-3 rounded-full border-2 border-primary bg-white" />
     </div>
   )
-}
-
-const fieldTypeLabels: Record<CrfFieldType, string> = {
-  text: "文本",
-  long_text: "长文本",
-  integer: "整数",
-  decimal: "小数",
-  date: "日期",
-  datetime: "日期时间",
-  boolean: "布尔",
-  single_select: "单选",
-  multi_select: "多选",
-  file: "文件",
-  computed: "计算",
-  detail_table: "明细",
 }
 
 function createVisitDraft(visits: VisitDraft[], insertIndex: number): VisitDraft {

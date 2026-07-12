@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table"
-import { CheckCircle2, ClipboardEdit, Save } from "lucide-react"
+import { AlertCircle, CheckCircle2, ClipboardEdit, Save, Send } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { CrfFieldInput } from "@/components/crf/CrfFieldInput"
 import { useCrfEntryTasksQuery, useSaveCrfRecordMutation } from "@/hooks/useApiData"
 import {
   createEmptyValues,
   flattenCrfFields,
   formatCrfValue,
-  normalizeCrfValue,
+  isFieldVisible,
+  resolveComputedValues,
+  validateSchemaValues,
   type CrfEntryTask,
   type CrfFieldNode,
 } from "@/lib/crf"
@@ -28,6 +28,9 @@ export function CrfEntryPage() {
   const tasks = tasksQuery.data ?? []
   const [selectedTaskId, setSelectedTaskId] = useState("")
   const [values, setValues] = useState<Record<string, unknown>>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [showValidation, setShowValidation] = useState(false)
+  const [lastAction, setLastAction] = useState<"draft" | "submitted" | null>(null)
 
   useEffect(() => {
     if (selectedTaskId || tasks.length === 0) return
@@ -40,9 +43,23 @@ export function CrfEntryPage() {
   useEffect(() => {
     if (!selectedTask) return
     setValues({ ...createEmptyValues(selectedTask.schema), ...selectedTask.values })
+    setErrors({})
+    setShowValidation(false)
+    setLastAction(null)
   }, [selectedTask])
 
   const fields = useMemo(() => (schema ? flattenCrfFields(schema.nodes) : []), [schema])
+
+  // 公式字段随其他字段实时求值；显隐和校验都基于求值后的完整数据
+  const displayValues = useMemo(
+    () => (schema ? resolveComputedValues(schema, values) : values),
+    [schema, values],
+  )
+  const visibleFields = useMemo(
+    () => fields.filter((field) => isFieldVisible(field, displayValues)),
+    [fields, displayValues],
+  )
+
   const siblingTasks = useMemo(
     () => tasks.filter((task) => selectedTask && task.schemaId === selectedTask.schemaId),
     [tasks, selectedTask],
@@ -75,22 +92,43 @@ export function CrfEntryPage() {
     getCoreRowModel: getCoreRowModel(),
   })
 
-  const updateValue = (field: CrfFieldNode, rawValue: string | boolean | string[]) => {
-    setValues((current) => ({ ...current, [field.key]: normalizeCrfValue(field, rawValue) }))
+  const locked = selectedTask?.status === "locked"
+
+  const updateValue = (field: CrfFieldNode, nextValue: unknown) => {
+    setValues((current) => {
+      const next = { ...current, [field.key]: nextValue }
+      if (showValidation && schema) {
+        setErrors(validateSchemaValues(schema, resolveComputedValues(schema, next)))
+      }
+      return next
+    })
   }
 
-  const saveRecord = async () => {
-    if (!selectedTask) return
+  const persist = async (status: "draft" | "submitted") => {
+    if (!selectedTask || !schema) return
     await saveMutation.mutateAsync({
       projectId: selectedTask.projectId,
       subjectId: selectedTask.subjectId,
       visitCode: selectedTask.visitCode,
       schemaId: selectedTask.schemaId,
       schemaVersion: selectedTask.schemaVersion,
-      values,
-      status: "draft",
+      // 公式字段的结果一并快照，报表可直接读取
+      values: resolveComputedValues(schema, values),
+      status,
     })
+    setLastAction(status)
     await queryClient.invalidateQueries({ queryKey: ["crf-entry-tasks", "ON101"] })
+  }
+
+  const saveDraft = () => persist("draft")
+
+  const submitRecord = async () => {
+    if (!schema) return
+    const nextErrors = validateSchemaValues(schema, displayValues)
+    setErrors(nextErrors)
+    setShowValidation(true)
+    if (Object.keys(nextErrors).length > 0) return
+    await persist("submitted")
   }
 
   if (tasksQuery.isLoading) {
@@ -98,8 +136,10 @@ export function CrfEntryPage() {
   }
 
   if (!selectedTask) {
-    return <Card><CardContent className="p-8 text-sm text-slate-500">还没有配置访视表格</CardContent></Card>
+    return <Card><CardContent className="p-8 text-sm text-slate-500">还没有配置访视模块</CardContent></Card>
   }
+
+  const errorCount = Object.keys(errors).length
 
   return (
     <div className="space-y-4">
@@ -107,7 +147,7 @@ export function CrfEntryPage() {
         <Card className="min-h-[680px]">
           <CardHeader>
             <CardTitle>填报任务</CardTitle>
-            <div className="text-sm text-slate-500">受试者 / 访视 / 表格</div>
+            <div className="text-sm text-slate-500">受试者 / 访视 / 模块</div>
           </CardHeader>
           <CardContent className="max-h-[560px] space-y-2 overflow-y-auto pr-2">
             {tasks.map((task) => (
@@ -133,31 +173,56 @@ export function CrfEntryPage() {
         <Card>
           <CardHeader className="flex-row items-center justify-between gap-4">
             <div>
-              <CardTitle>生成表单</CardTitle>
+              <CardTitle>模块填报</CardTitle>
               <div className="mt-2 text-sm text-slate-500">
                 {selectedTask.subjectCode} / {selectedTask.visitCode} / {selectedTask.schema.name}
               </div>
             </div>
-            <Button className="rounded-full" disabled={saveMutation.isPending} onClick={saveRecord}>
-              <Save className="mr-2 h-4 w-4" />
-              保存填报
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="rounded-full"
+                disabled={saveMutation.isPending || locked}
+                onClick={saveDraft}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                保存草稿
+              </Button>
+              <Button className="rounded-full" disabled={saveMutation.isPending || locked} onClick={submitRecord}>
+                <Send className="mr-2 h-4 w-4" />
+                提交
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2">
-              {fields.map((field) => (
+            {locked ? (
+              <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                该记录已锁定，不能修改。
+              </div>
+            ) : null}
+            {showValidation && errorCount > 0 ? (
+              <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                还有 {errorCount} 处未通过校验，请修改后再提交（保存草稿不受影响）。
+              </div>
+            ) : null}
+            <div className="crf-grid">
+              {visibleFields.map((field) => (
                 <CrfFieldInput
                   key={field.id}
                   field={field}
-                  value={values[field.key]}
-                  onChange={(rawValue) => updateValue(field, rawValue)}
+                  value={displayValues[field.key]}
+                  error={showValidation ? errors[field.key] : undefined}
+                  errors={showValidation ? errors : undefined}
+                  disabled={locked}
+                  onChange={(nextValue) => updateValue(field, nextValue)}
                 />
               ))}
             </div>
-            {saveMutation.isSuccess ? (
+            {saveMutation.isSuccess && lastAction ? (
               <div className="mt-5 flex items-center gap-2 text-sm text-emerald-600">
                 <CheckCircle2 className="h-4 w-4" />
-                填报数据已保存到 Postgres jsonb
+                {lastAction === "submitted" ? "已提交，数据通过全部校验" : "草稿已保存"}
               </div>
             ) : null}
           </CardContent>
@@ -169,7 +234,7 @@ export function CrfEntryPage() {
           <CardTitle>{selectedTask.schema.name} 数据表</CardTitle>
           <div className="flex items-center gap-2 text-sm text-slate-500">
             <ClipboardEdit className="h-4 w-4" />
-            同一原子表格在不同访视中复用
+            同一模块可以在不同访视中复用
           </div>
         </CardHeader>
         <CardContent>
@@ -202,130 +267,21 @@ export function CrfEntryPage() {
 }
 
 function StatusPill({ status }: { status: CrfEntryTask["status"] }) {
-  const map = {
+  const labelMap = {
     not_started: "未开始",
     draft: "草稿",
     submitted: "已提交",
     locked: "已锁定",
   }
-  return <Badge className="bg-slate-100 text-slate-600">{map[status]}</Badge>
-}
-
-function CrfFieldInput({
-  field,
-  value,
-  onChange,
-}: {
-  field: CrfFieldNode
-  value: unknown
-  onChange: (value: string | boolean | string[]) => void
-}) {
-  const label = (
-    <div className="mb-2 text-sm font-medium text-slate-600">
-      {field.label}
-      {field.required ? <span className="ml-1 text-rose-500">*</span> : null}
-      {field.unit ? <span className="ml-2 text-xs text-slate-400">({field.unit})</span> : null}
-    </div>
-  )
-
-  if (field.type === "boolean") {
-    return (
-      <label className="rounded-md border bg-white p-4">
-        {label}
-        <div className="flex h-10 items-center gap-2">
-          <Checkbox checked={Boolean(value)} onCheckedChange={(checked) => onChange(checked === true)} />
-          <span className="text-sm text-slate-600">是</span>
-        </div>
-      </label>
-    )
+  const colorMap = {
+    not_started: "bg-slate-100 text-slate-500",
+    draft: "bg-amber-100 text-amber-700",
+    submitted: "bg-emerald-100 text-emerald-700",
+    locked: "bg-slate-200 text-slate-600",
   }
-
-  if (field.type === "single_select") {
-    return (
-      <label className="rounded-md border bg-white p-4">
-        {label}
-        <Select value={String(value ?? "")} onValueChange={onChange}>
-          <SelectTrigger><SelectValue placeholder="请选择" /></SelectTrigger>
-          <SelectContent>
-            {(field.options ?? []).map((option) => (
-              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </label>
-    )
-  }
-
-  if (field.type === "multi_select") {
-    const selectedValues = Array.isArray(value) ? value.map(String) : []
-    return (
-      <div className="rounded-md border bg-white p-4">
-        {label}
-        <div className="grid gap-2">
-          {(field.options ?? []).map((option) => (
-            <label key={option.value} className="flex items-center gap-2 text-sm text-slate-600">
-              <Checkbox
-                checked={selectedValues.includes(option.value)}
-                onCheckedChange={(checked) => {
-                  const next = checked
-                    ? [...selectedValues, option.value]
-                    : selectedValues.filter((item) => item !== option.value)
-                  onChange(next)
-                }}
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  if (field.type === "long_text") {
-    return (
-      <label className="rounded-md border bg-white p-4 md:col-span-2">
-        {label}
-        <textarea
-          className="min-h-24 w-full rounded-md border border-input bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          value={String(value ?? "")}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      </label>
-    )
-  }
-
-  if (field.type === "detail_table") {
-    return (
-      <div className="rounded-md border border-cyan-100 bg-cyan-50/70 p-4 md:col-span-2">
-        {label}
-        <div className="rounded-md border bg-white p-4 text-sm text-slate-600">
-          <div className="font-semibold text-slate-700">关联子表格</div>
-          <div className="mt-2 text-slate-500">
-            {field.detail?.targetSchemaCode ? `子表：${field.detail.targetSchemaCode}` : "尚未选择子表格"}
-          </div>
-          <div className="mt-2 text-xs leading-5 text-slate-400">
-            明细数据后续会以独立子记录保存，当前先完成 schema 关联配置。
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <label className="rounded-md border bg-white p-4">
-      {label}
-      <Input type={getInputType(field)} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  )
+  return <Badge className={colorMap[status]}>{labelMap[status]}</Badge>
 }
 
 function CrfTableValue({ field, value }: { field: CrfFieldNode; value: unknown }) {
   return <span className={field.table?.align === "right" ? "block text-right" : undefined}>{formatCrfValue(field, value)}</span>
-}
-
-function getInputType(field: CrfFieldNode) {
-  if (field.type === "integer" || field.type === "decimal") return "number"
-  if (field.type === "date") return "date"
-  if (field.type === "datetime") return "datetime-local"
-  return "text"
 }

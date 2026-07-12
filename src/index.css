@@ -30,7 +30,7 @@
 
   html {
     min-width: 320px;
-    background: #f3f8f7;
+    background: #f7fafb;
   }
 
   body {
@@ -44,8 +44,23 @@
 }
 
 @layer components {
+  .app-workspace-bg {
+    background-color: #f7fafb;
+    background-image:
+      radial-gradient(circle at 8% 0%, rgba(185, 239, 221, 0.78) 0, rgba(215, 246, 236, 0.48) 24%, transparent 46%),
+      radial-gradient(circle at 51% 0%, rgba(191, 226, 243, 0.72) 0, rgba(224, 240, 247, 0.42) 28%, transparent 52%),
+      radial-gradient(circle at 91% 0%, rgba(224, 216, 242, 0.7) 0, rgba(239, 232, 247, 0.4) 26%, transparent 48%),
+      linear-gradient(180deg, #eef9f7 0%, #f5f9fa 44%, #fbfcfc 76%, #ffffff 100%);
+    background-attachment: fixed;
+  }
+
   .panel {
-    @apply rounded-lg border border-white/80 bg-white shadow-panel;
+    @apply border border-white/90 bg-white/95;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow:
+      0 16px 36px rgba(30, 64, 83, 0.09),
+      0 3px 10px rgba(30, 64, 83, 0.045);
   }
 
   .soft-grid {
@@ -53,5 +68,34 @@
       linear-gradient(to right, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
       linear-gradient(to bottom, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
     background-size: 48px 48px;
+  }
+
+  /* CRF 表单 12 格布局：子元素用 data-span 控制占宽，移动端统一整行 */
+  .crf-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .crf-grid > * {
+    grid-column: 1 / -1;
+  }
+
+  @media (min-width: 768px) {
+    .crf-grid > [data-span="3"] {
+      grid-column: span 3 / span 3;
+    }
+    .crf-grid > [data-span="4"] {
+      grid-column: span 4 / span 4;
+    }
+    .crf-grid > [data-span="6"] {
+      grid-column: span 6 / span 6;
+    }
+    .crf-grid > [data-span="8"] {
+      grid-column: span 8 / span 8;
+    }
+    .crf-grid > [data-span="9"] {
+      grid-column: span 9 / span 9;
+    }
   }
 }
